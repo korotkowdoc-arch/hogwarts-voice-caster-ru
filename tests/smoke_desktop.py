@@ -8,6 +8,22 @@ try:
     assert callable(app.state), "App.state() was overwritten by a widget"
     assert app.state() in {"normal", "zoomed", "iconic", "withdrawn"}
     app.set_status("Smoke test")
+    app.draw_spell_settings()
+    app.update()
+    assert app._active_page == "spells"
+    assert len(app.spell_vars) >= 25
+    app.spell_vars["Depulso"].set(True)
+    app.update_enabled_spells()
+    assert "Depulso" in app.config_data["enabled_spells"]
+    app.set_all_spells(False)
+    assert app.config_data["enabled_spells"] == []
+    app.set_all_spells(True)
+    assert len(app.config_data["enabled_spells"]) == len(app.spell_vars)
+    # Tests should never leave a modified Git working tree behind.
+    app.config_data["enabled_spells"] = ["Lumos", "Accio"]
+    app.save_config()
+    app.draw_home()
+    app.update()
     assert app.activation_menu is not None
     assert app.ptt_key_menu is not None
     assert app.activation_menu.get() in (

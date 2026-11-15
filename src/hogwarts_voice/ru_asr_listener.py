@@ -35,18 +35,25 @@ def run(args, cfg):
         return 2
 
     spellbook = load_spell_aliases()
-    allowed = cfg.get("enabled_spells", list(DEFAULT_ENABLED))
-    if not isinstance(allowed, list) or not all(
-        isinstance(item, str) and item in spellbook for item in allowed
+    game_allowed = cfg.get("enabled_spells", list(DEFAULT_ENABLED))
+    if not isinstance(game_allowed, list) or not all(
+        isinstance(item, str) and item in spellbook for item in game_allowed
     ):
         print("[setup] Invalid enabled_spells in config.json", flush=True)
         return 2
-    if not allowed:
-        print("[setup] No enabled spells (safe mode).", flush=True)
-    print("[engine] Russian GigaAM v2 ready. No voice samples needed.", flush=True)
-    print(f"[allowed] {', '.join(allowed) or '(none)'}", flush=True)
-
+    # A microphone TEST never sends commands. Allow testing the entire spell
+    # dictionary, even spells that have not been enabled for real gameplay.
     dry_run = bool(args.dry_run)
+    allowed = list(spellbook) if dry_run else game_allowed
+    print("[engine] Russian GigaAM v2 ready. No voice samples needed.", flush=True)
+    if dry_run:
+        print(f"[allowed] TEST: all {len(allowed)} known incantations; "
+              "none are sent to the game.", flush=True)
+    else:
+        print(f"[allowed] GAME: {', '.join(allowed) or '(none)'}", flush=True)
+        if not allowed:
+            print("[setup] No spells enabled: voice casts are disabled.", flush=True)
+
     ptt_mode = bool(cfg.get("push_to_talk", True))
     ptt_name = cfg.get("ptt_key", "F9")
     try:

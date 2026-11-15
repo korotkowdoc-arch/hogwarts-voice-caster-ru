@@ -125,12 +125,14 @@ class App(ctk.CTk):
 
         button(s, "Главная", self.draw_home).pack(fill="x", padx=17, pady=5)
         button(s, "Атлас заклинаний", self.open_wizard).pack(fill="x", padx=17, pady=5)
+        button(s, "Доступные заклинания", self.draw_spell_settings).pack(
+            fill="x", padx=17, pady=5)
         button(s, "Импорт игровых иконок", self.import_icons).pack(fill="x", padx=17, pady=5)
         button(s, "Источник иконок", lambda: webbrowser.open(SOURCE_PAGE)).pack(fill="x", padx=17, pady=5)
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v1.0", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v1.0.1", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -151,6 +153,88 @@ class App(ctk.CTk):
             json.dumps(self.config_data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8"
         )
+
+    def draw_spell_settings(self):
+        """Select which incantations may actually cast in the game.
+
+        Microphone TEST mode always checks all dictionary words. These toggles
+        only authorize actual game commands, never modify the ASR model.
+        """
+        if self.wizard is not None and self.wizard.win.winfo_exists():
+            if self.wizard.busy:
+                self.wizard.notice.configure(
+                    text="Дождись окончания записи перед переходом.",
+                    text_color=GOLD,
+                )
+                return
+            self.wizard = None
+        self.clear_content()
+        self._active_page = "spells"
+        wrapper = ctk.CTkFrame(self.content, fg_color="transparent")
+        wrapper.pack(fill="both", expand=True, padx=28, pady=23)
+        text(wrapper, "НАСТРОЙКА ГОЛОСОВЫХ КОМАНД", size=11,
+             color=GOLD, weight="bold").pack(anchor="w", pady=(0,6))
+        heading(wrapper, "Какие заклинания разрешены?", size=28).pack(anchor="w")
+        text(wrapper,
+             "При проверке микрофона распознаются все заклинания. "
+             "Здесь ты выбираешь, какие разрешено применять в игре.",
+             size=12, wraplength=750).pack(anchor="w", pady=(10,16))
+        self.enabled_count = text(wrapper, "", size=12, color=GREEN)
+        self.enabled_count.pack(anchor="w", pady=(0,12))
+
+        scroll = ctk.CTkScrollableFrame(
+            wrapper, fg_color=PANEL, corner_radius=14,
+            border_width=1, border_color=BORDER,
+        )
+        scroll.pack(fill="both", expand=True, pady=(0, 12))
+        scroll.grid_columnconfigure(0, weight=1)
+        scroll.grid_columnconfigure(1, weight=1)
+        enabled = set(self.config_data.get("enabled_spells", ["Lumos", "Accio"]))
+        self.spell_vars = {}
+        for index, spell in enumerate(self.book.entries):
+            reading = READINGS.get(spell, (spell, spell))[0]
+            variable = ctk.BooleanVar(value=spell in enabled)
+            self.spell_vars[spell] = variable
+            control = ctk.CTkCheckBox(
+                scroll, text=f"{reading}  —  {spell}", variable=variable,
+                command=self.update_enabled_spells,
+                fg_color=GOLD, hover_color=GOLD_HOVER,
+                text_color=TEXT, checkmark_color=BASE,
+                font=ctk.CTkFont(family=FONT, size=12),
+            )
+            control.grid(row=index // 2, column=index % 2, sticky="w",
+                         padx=18, pady=10)
+
+        actions = ctk.CTkFrame(wrapper, fg_color="transparent")
+        actions.pack(fill="x", pady=(0,6))
+        button(actions, "Разрешить все", lambda: self.set_all_spells(True),
+               height=38, width=150).pack(side="left", padx=(0,8))
+        button(actions, "Запретить все", lambda: self.set_all_spells(False),
+               height=38, width=150).pack(side="left")
+        button(actions, "Вернуться на главную", self.draw_home,
+               height=38, width=190).pack(side="right")
+        self.update_spell_count()
+
+    def update_spell_count(self):
+        selected = [spell for spell, state in self.spell_vars.items()
+                    if state.get()]
+        self.enabled_count.configure(
+            text=f"Разрешено в игре: {len(selected)} из {len(self.spell_vars)}"
+        )
+
+    def update_enabled_spells(self):
+        selected = [spell for spell in self.book.entries
+                    if self.spell_vars[spell].get()]
+        self.config_data["enabled_spells"] = selected
+        self.save_config()
+        self.update_spell_count()
+        self.log(f"[config] В игре разрешено заклинаний: {len(selected)}. "
+                 "Перезапусти прослушивание для применения изменений.")
+
+    def set_all_spells(self, allow):
+        for state in self.spell_vars.values():
+            state.set(allow)
+        self.update_enabled_spells()
 
     def draw_home(self):
         # The training wizard is an embedded page, not a top-level dialog.
@@ -389,7 +473,11 @@ class App(ctk.CTk):
         self.log("Запуск проверки микрофона..." if dry_run else "Запуск игрового распознавания...")
         if self.config_data.get("recognition_engine", "gigaam_ru") == "gigaam_ru":
             self.log("[engine] Русская нейросеть GigaAM v2. Обучение голосу не требуется.")
-            self.log("[engine] Для первой проверки разрешены только Люмос и Акцио.")
+            if dry_run:
+                self.log("[engine] Проверка распознаёт все заклинания, но ничего не применяет.")
+            else:
+                selected = self.config_data.get("enabled_spells", ["Lumos", "Accio"])
+                self.log(f"[engine] Для игры разрешено заклинаний: {len(selected)}.")
         if self.config_data.get("push_to_talk", True):
             self.log(f"[ptt] Зажми {self.config_data.get('ptt_key','F9')}, "
                      "произнеси ОДНО заклинание и отпусти кнопку.")

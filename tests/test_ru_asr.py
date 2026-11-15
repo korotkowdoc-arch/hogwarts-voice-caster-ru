@@ -37,6 +37,24 @@ class NeuralASRTests(unittest.TestCase):
                      "к цели", "здравствуйте", "люмос пожалуйста", ""):
             self.assertIsNone(match_incantation(text, self.book)[0], text)
 
+    def test_real_observed_neural_spelling(self):
+        all_spells = list(self.book)
+        self.assertEqual(match_incantation(
+            "депульсо", self.book, enabled=all_spells)[0], "Depulso")
+        self.assertEqual(match_incantation(
+            "экспелярмус", self.book, enabled=all_spells)[0], "Expelliarmus")
+        # Reject unrelated or generic ordinary Russian words even if all game
+        # commands are enabled.
+        for unrelated in ("невидимость", "моментум", "пожалуйста", "завтра"):
+            self.assertIsNone(match_incantation(
+                unrelated, self.book, enabled=all_spells)[0], unrelated)
+
+    def test_enabled_spells_are_enforced_in_game(self):
+        self.assertIsNone(match_incantation(
+            "депульсо", self.book, enabled=["Lumos", "Accio"])[0])
+        self.assertEqual(match_incantation(
+            "депульсо", self.book, enabled=["Lumos", "Depulso"])[0], "Depulso")
+
     def test_explicit_whitelist_allows_other_names_but_not_generic(self):
         self.assertEqual(match_incantation("конфринго", self.book,
                          enabled=["Confringo"])[0], "Confringo")

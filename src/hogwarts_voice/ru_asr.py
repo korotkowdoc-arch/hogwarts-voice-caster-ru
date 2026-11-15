@@ -34,6 +34,9 @@ UNSAFE_GENERIC_ALIASES = frozenset({
 EXTRA_PRONUNCIATIONS = {
     "Lumos": ("люмос", "люмус", "люмас"),
     "Accio": ("акцио", "аксио"),
+    # Genuine GigaAM output observed during real user testing.
+    # Keep it as an explicit alias, not unrestricted phonetic fuzziness.
+    "Expelliarmus": ("экспелярмус",),
 }
 
 def normalized(text: str) -> str:
