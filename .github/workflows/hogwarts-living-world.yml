@@ -59,6 +59,7 @@ jobs:
           Copy-Item dist/HogwartsLivingWorld.exe package/
           Copy-Item run.bat package/
           Copy-Item README.md package/
+          Copy-Item QUICKSTART_RU.md package/
           Copy-Item SONORUS_SETUP.md package/
           Copy-Item demo-story.ps1 package/
           Copy-Item demo-voice.ps1 package/
