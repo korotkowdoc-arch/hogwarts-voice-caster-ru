@@ -128,12 +128,14 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                      "No free provider response. No paid fallback. NPC and save data unchanged."}})
             except (KeyError,ValueError,TypeError,json.JSONDecodeError) as exc:
                 return self._answer(400,{"error":"bad_request","message":str(exc)})
+    Handler.close_storage = world.db.close
     return Handler
 
 def main():
     # Never expose cloud keys on a public interface.
     addr=("127.0.0.1",8765)
-    httpd=ThreadingHTTPServer(addr,create_app())
+    handler = create_app()
+    httpd=ThreadingHTTPServer(addr,handler)
     print(f"Hogwarts Living World v{__version__} http://{addr[0]}:{addr[1]}")
     print("Cloud models only. No paid fallbacks. Ctrl+C to stop.")
     try:
@@ -142,6 +144,7 @@ def main():
         pass
     finally:
         httpd.server_close()
+        handler.close_storage()
 
 if __name__ == "__main__":
     main()
