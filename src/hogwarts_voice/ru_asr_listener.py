@@ -12,7 +12,11 @@ import time
 
 from .bridge import SpellBridge
 from .ptt import PushToTalkCapture, key_code
-from .ru_asr import RussianASR, load_spell_aliases, match_incantation, DEFAULT_ENABLED
+from .ru_asr import (
+    RussianASR, RussianTransducerASR,
+    load_spell_aliases, match_incantation, DEFAULT_ENABLED
+)
+from .early_decode import EarlyDecode
 from .vad import AdaptiveSpeechSegmenter
 from .windows import KeyboardState, down, game_focused, foreground_process_name
 from .voice_presets import DEFAULT_STYLE, validate_style, STYLE_LABELS
@@ -30,9 +34,13 @@ def run(args, cfg):
 
     try:
         import sherpa_onnx
-        print("[engine] Loading GigaAM v2 Russian neural model (CPU, offline)...",
-              flush=True)
-        neural = RussianASR(num_threads=int(cfg.get("asr_threads", 4)))
+        backend = cfg.get("asr_backend", "ctc")
+        if backend not in ("ctc", "transducer"):
+            raise ValueError(f"Invalid asr_backend: {backend}")
+        engine_class = RussianTransducerASR if backend == "transducer" else RussianASR
+        print(f"[engine] Loading GigaAM v2 Russian {backend.upper()} model "
+              "(CPU, offline)...", flush=True)
+        neural = engine_class(num_threads=int(cfg.get("asr_threads", 4)))
     except Exception as exc:
         print(f"[setup] Russian model error: {exc}", flush=True)
         print("[setup] Run the latest install.bat to install the neural engine.",
@@ -85,6 +93,8 @@ def run(args, cfg):
         return 2
     focus_required = not dry_run and cfg.get("require_game_focus", True)
     recorder = PushToTalkCapture()
+    early_enabled = bool(cfg.get("early_decode", True)) and ptt_mode
+    early = EarlyDecode()
     segmenter = AdaptiveSpeechSegmenter(silence_ms=170, min_speech_ms=170)
     chunks = queue.Queue(maxsize=25)
     answers = queue.SimpleQueue()
@@ -126,7 +136,13 @@ def run(args, cfg):
             except queue.Empty:
                 break
 
-    def start_decode(pcm: bytes, *, recorded_at: float, started_at: float):
+    def decode_task(pcm):
+        t0 = time.monotonic()
+        transcript = neural.transcribe(pcm)
+        return transcript, (time.monotonic() - t0) * 1000
+
+    def start_decode(pcm: bytes, *, recorded_at: float, started_at: float,
+                     preview_future=None):
         nonlocal awaiting
         if awaiting:
             print("[blocked] Previous spell is still being decoded; press again.",
@@ -135,15 +151,12 @@ def run(args, cfg):
         awaiting = True
         current = generation
         task_start = time.monotonic()
-
-        def decode():
-            return neural.transcribe(pcm)
-
-        future = executor.submit(decode)
+        reuse = preview_future is not None
+        future = preview_future if reuse else executor.submit(decode_task, pcm)
         future.add_done_callback(
             lambda item, gen=current, t0=task_start,
-                   recorded=recorded_at, begun=started_at:
-                answers.put((gen, item, t0, recorded, begun))
+                   recorded=recorded_at, begun=started_at, early=reuse:
+                answers.put((gen, item, t0, recorded, begun, early))
         )
 
     try:
@@ -160,7 +173,9 @@ def run(args, cfg):
         print("[help] F8 toggles pause. Return to Hogwarts Legacy to cast in GAME mode.",
               flush=True)
         print(f"[perf] mic block={block_ms}ms, CPU threads="
-              f"{cfg.get('asr_threads', 4)}; model stays loaded", flush=True)
+              f"{cfg.get('asr_threads', 4)}; "
+              f"speculative={'on' if early_enabled else 'off'}; "
+              f"model stays loaded", flush=True)
         print(f"[actions] Alohomora interacts with nearby lock using {interact_key}. "
               "A lock minigame may still appear.", flush=True)
         with sd.RawInputStream(
@@ -172,6 +187,7 @@ def run(args, cfg):
                 if hotkeys.update():
                     print(f"[voice] {'ON' if hotkeys.active else 'PAUSED'}", flush=True)
                     recorder.reset()
+                    early.reset()
                     segmenter.reset()
                     generation += 1
                     clear_audio()
@@ -211,6 +227,7 @@ def run(args, cfg):
                     last_focused = enabled
                     generation += 1
                     recorder.reset()
+                    early.reset()
                     segmenter.reset()
                     clear_audio()
                     if enabled:
@@ -224,6 +241,7 @@ def run(args, cfg):
                     pressed = down(ptt_vk)
                     if enabled and pressed and not old_pressed:
                         recorder.press()
+                        early.reset()
                         pressed_at = now
                         clear_audio()
                         print(f"[ptt] RECORDING ({ptt_name})", flush=True)
@@ -238,24 +256,28 @@ def run(args, cfg):
                         pcm, elapsed, state = recorder.release()
                         print(f"[ptt] RELEASED {elapsed:.0f}ms ({state})", flush=True)
                         if pcm:
-                            start_decode(pcm, recorded_at=now, started_at=pressed_at)
+                            reused = early.release_future(pcm) if early_enabled else None
+                            start_decode(pcm, recorded_at=now, started_at=pressed_at,
+                                         preview_future=reused)
                         else:
+                            early.reset()
                             print("[blocked] Invalid hold length. Nothing cast.", flush=True)
                     elif not enabled and recorder.held:
                         recorder.reset()
+                        early.reset()
                         print("[ptt] CANCELLED (focus lost or paused)", flush=True)
                     old_pressed = pressed
 
                 while True:
                     try:
-                        result_generation, future, submitted, released, started = answers.get_nowait()
+                        result_generation, future, submitted, released, started, used_preview = answers.get_nowait()
                     except queue.Empty:
                         break
                     awaiting = False
                     if result_generation != generation or not enabled:
                         continue
                     try:
-                        transcript = future.result()
+                        transcript, inference_ms = future.result()
                     except Exception as exc:
                         print(f"[asr] Decoding error: {exc}", flush=True)
                         continue
@@ -263,8 +285,13 @@ def run(args, cfg):
                         transcript, spellbook, allowed, style=voice_style
                     )
                     print(f"[heard] {transcript or '(silence)'}", flush=True)
-                    elapsed_ms = (time.monotonic() - submitted) * 1000
-                    print(f"[asr] GigaAM decoded in {elapsed_ms:.0f}ms; match={reason}",
+                    elapsed_ms = (time.monotonic() - released) * 1000
+                    print(f"[asr] GigaAM {backend} inference={inference_ms:.0f}ms; "
+                          f"release-to-text={elapsed_ms:.0f}ms; match={reason}",
+                          flush=True)
+                    print(f"[latency] inference={inference_ms:.0f}ms "
+                          f"after-release={elapsed_ms:.0f}ms "
+                          f"speculative={'yes' if used_preview else 'no'}",
                           flush=True)
                     if not spell:
                         print("[blocked] No permitted incantation. Nothing cast.", flush=True)
@@ -331,6 +358,15 @@ def run(args, cfg):
                 if ptt_mode:
                     if recorder.held and captured >= pressed_at:
                         recorder.add(audio)
+                        if early_enabled and not awaiting and not recorder.overlong:
+                            def submit_preview(snapshot):
+                                print("[perf] Speech ended while Mouse PTT still held; "
+                                      "started early decode.", flush=True)
+                                return executor.submit(decode_task, snapshot)
+                            early.feed(
+                                audio, snapshot=lambda: b"".join(recorder.frames),
+                                submit=submit_preview,
+                            )
                 else:
                     phrase = segmenter.feed(audio)
                     if phrase:
