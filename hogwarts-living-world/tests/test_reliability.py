@@ -46,6 +46,17 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(sum(x["kind"]=="owl_letter_proposal" for x in queued),1)
         self.assertEqual(sum(x["kind"]=="npc_note" for x in queued),1)
 
+    def test_secret_revelation_changes_two_npcs_once(self):
+        result=self.world.apply("slot","sebastian","secret_revealed_to_ominis","reveal_1")
+        self.assertEqual(result["trust"],-16)
+        self.assertEqual(self.world.snapshot("slot","ominis")["trust"],8)
+        events=self.world.pending("slot",limit=100)
+        self.assertEqual(sum(x["kind"]=="social_reaction_proposal" for x in events),1)
+        self.assertTrue(self.world.apply("slot","sebastian","secret_revealed_to_ominis","reveal_1")["duplicate"])
+        self.assertEqual(self.world.snapshot("slot","ominis")["trust"],8)
+        with self.assertRaises(ValueError):
+            self.world.apply("slot","poppy","secret_revealed_to_ominis","invalid")
+
     def test_probe_via_file_inbox(self):
         path=self.root / "game-events.jsonl"
         path.write_text('{"player_id":"ue4ss_probe","npc_id":"bridge_probe","event":"probe_ping","event_id":"test001"}\n',encoding="utf-8")
