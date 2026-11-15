@@ -113,3 +113,27 @@ To test safely without game files:
 Sonorus custom OpenAI URL, JSON and streaming support are **not game-tested**.
 Initial support is text/subtitle-only. Cloud speech integration to Sonorus
 is a separate milestone.
+
+
+## Optional cloud voice experiment
+
+Gemini 3.8 Flash TTS can return a Russian WAV from a supported free-tier
+account. **Not** connected to Sonorus voice playback and **not** character
+voice cloning. Do not enable Gemini project billing if zero cost is required.
+
+In the same CMD session before starting run.bat:
+
+    set HLW_ENABLE_CLOUD_TTS=1
+    set GEMINI_API_KEY=your_confirmed_free_tier_key
+    run.bat
+
+Then in another PowerShell window in the bridge folder run:
+
+    powershell -ExecutionPolicy Bypass -File .\demo-voice.ps1
+
+This sends one short text (maximum 240 characters) to a fixed Gemini 3.8
+TTS model, caches returned WAV locally and plays it. Supports built-in
+voices Kore, Puck, Charon and Aoede, without imitating the actors.
+The program allows up to 20 *new* cloud TTS requests per local day.
+Previously cached sentences don't consume the request cap.
+No paid fallback exists. Free-tier account selection is your responsibility.
