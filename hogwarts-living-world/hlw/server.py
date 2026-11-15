@@ -25,7 +25,16 @@ def data_dir() -> Path:
 def create_app(data: Path | None = None, router: FreeRouter | None = None):
     directory = data or data_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    world = World(directory / "world.sqlite3")
+    db_path = directory / "world.sqlite3"
+    existing_db = db_path.exists() and db_path.stat().st_size > 0
+    world = World(db_path)
+    # Backup existing world data once each day. SQLite backup is WAL-safe.
+    if existing_db:
+        from datetime import date
+        backup_dir = directory / "backups"
+        today = date.today().strftime("%Y%m%d")
+        if not list(backup_dir.glob("world-"+today+"*.sqlite3")):
+            world.backup(backup_dir)
     router = router or FreeRouter(DailyBudget(directory / "daily_counts.json",
                                             {"gemini": 120, "groq": 300}))
     bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
@@ -74,9 +83,20 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                              "sonorus":"openai_compatible_chat_completions_beta",
                                              "text_only":True,"game_hooks_installed":False,
                                              "game_event_file_inbox":watch_events,
-                                             "cloud_tts_preview_enabled":speech is not None})
+                                             "cloud_tts_preview_enabled":speech is not None,
+                                             "last_probe":world.last_probe(),
+                                             "game_integration_verified":False})
                 if url.path == "/v1/models":
                     return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
+                if url.path == "/v1/diagnostics":
+                    return self._answer(200,{
+                        "storage_integrity":world.integrity_check(),
+                        "last_probe":world.last_probe(),
+                        "watching_event_inbox":watch_events,
+                        "key_names_present":router.configured,
+                        "data_directory":str(directory),
+                        "sonorus_game_integration_verified":False
+                    })
                 if url.path == "/v1/world/outbox":
                     player = parse_qs(url.query).get("player_id",[""])[0]
                     return self._answer(200,{"events":world.pending(player)})
@@ -93,6 +113,9 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             try:
                 body = self._payload()
                 path = urlparse(self.path).path
+                if path == "/v1/world/backup":
+                    dest=world.backup(directory / "backups")
+                    return self._answer(200,{"backup_created":True,"file":dest.name})
                 if path == "/v1/voice/preview":
                     if speech is None:
                         return self._answer(404,{"error":"cloud_tts_preview_disabled"})
