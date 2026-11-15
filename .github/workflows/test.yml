@@ -39,3 +39,15 @@ jobs:
           if errorlevel 1 exit /b 1
           call install-voice-id.bat --self-test
           if errorlevel 1 exit /b 1
+
+      - name: Validate Python detection with broken launcher
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          mkdir "%TEMP%\hvc-fake-py"
+          > "%TEMP%\hvc-fake-py\py.cmd" echo @echo off
+          >> "%TEMP%\hvc-fake-py\py.cmd" echo echo [ERROR] No runtime installed that matches 3.11.
+          >> "%TEMP%\hvc-fake-py\py.cmd" echo exit /b 0
+          set "PATH=%TEMP%\hvc-fake-py;%PATH%"
+          call install.bat --check-python
+          if errorlevel 1 exit /b 1

@@ -10,22 +10,22 @@ echo Fast mode: no speaker ID or heavy torch dependency.
 echo Logging details to install.log in this folder.
 if not exist "requirements.txt" goto :missingfiles
 if not exist "download_model.py" goto :missingfiles
+REM Some Windows Python launchers return exit code 0 even if a runtime is missing.
+REM Check an exact stdout marker produced by a REAL Python interpreter.
 set "PYTHON_CMD="
-where py >nul 2>nul
-if errorlevel 1 goto :try_python
-py -3.11 -c "import sys;sys.exit(0 if sys.maxsize>2**32 else 1)" >nul 2>nul
-if not errorlevel 1 set "PYTHON_CMD=py -3.11"
+call :probe_python py -3.11
 if defined PYTHON_CMD goto :foundpython
-py -3.12 -c "import sys;sys.exit(0 if sys.maxsize>2**32 else 1)" >nul 2>nul
-if not errorlevel 1 set "PYTHON_CMD=py -3.12"
+call :probe_python py -3.12
 if defined PYTHON_CMD goto :foundpython
-:try_python
-where python >nul 2>nul
-if errorlevel 1 goto :missingpython
-python -c "import sys;sys.exit(0 if sys.version_info[:2] in ((3,11),(3,12)) and sys.maxsize>2**32 else 1)" >nul 2>nul
-if errorlevel 1 goto :missingpython
-set "PYTHON_CMD=python"
+call :probe_python python
+if defined PYTHON_CMD goto :foundpython
+call :probe_python python3
+if defined PYTHON_CMD goto :foundpython
+call :probe_python py -3
+if not defined PYTHON_CMD goto :missingpython
 :foundpython
+echo Using Python: %PYTHON_CMD%
+if /I "%~1"=="--check-python" goto :pythoncheckok
 echo [1/4] Preparing Python virtual environment...
 echo Interpreter: %PYTHON_CMD% >> "%LOG%"
 call %PYTHON_CMD% -m venv ".venv" >> "%LOG%" 2>&1
@@ -47,7 +47,9 @@ echo [ERROR] Files are missing. Extract the entire ZIP before running.
 goto :fail
 :missingpython
 echo [ERROR] Python 3.11 or 3.12 x64 not found.
-echo Install Python 3.11 x64 from https://www.python.org/downloads/
+echo Try: py install 3.11
+echo Or install Python 3.11 x64 from https://www.python.org/downloads/
+echo The previous Python selection issue is fixed in this installer.
 goto :fail
 :venvfail
 echo [ERROR] Virtual environment creation failed.
@@ -75,8 +77,20 @@ echo.
 echo The window will stay open until you press a key.
 pause
 exit /b 0
+:pythoncheckok
+echo [OK] Found supported Python interpreter: %PYTHON_CMD%
+exit /b 0
 :selftest
 if not exist "%~dp0requirements.txt" exit /b 2
 if not exist "%~dp0download_model.py" exit /b 3
 echo [OK] Installer launched correctly.
+exit /b 0
+:probe_python
+REM A Python Manager stub can report "No runtime installed" with status 0.
+REM Thus check a magic output line, not only ERRORLEVEL.
+set "PROBE_OUTPUT=%TEMP%\hvc_python_probe_%RANDOM%_%RANDOM%.txt"
+%* -c "import sys;print('HVC_VALID_PY' if sys.version_info[:2] in ((3,11),(3,12)) and sys.maxsize > 2**32 else 'HVC_INVALID_PY')" > "%PROBE_OUTPUT%" 2>nul
+findstr /x /c:"HVC_VALID_PY" "%PROBE_OUTPUT%" >nul 2>nul
+if not errorlevel 1 set "PYTHON_CMD=%*"
+if exist "%PROBE_OUTPUT%" del /q "%PROBE_OUTPUT%" >nul 2>nul
 exit /b 0

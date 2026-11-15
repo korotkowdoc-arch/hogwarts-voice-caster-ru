@@ -164,3 +164,11 @@ If it still closes, open a Command Prompt in the extracted folder and run:
 cmd /d /k install.bat
 ```
 
+
+
+If the log shows `[ERROR] No runtime installed that matches 3.11`, the `py` launcher exists
+but Python 3.11 itself is not installed. Run `py install 3.11` in a normal Windows
+terminal, or install 64-bit Python 3.11/3.12 from python.org. The installer
+now checks actual Python stdout, handles misleading launcher exit codes, and
+falls back to an existing supported interpreter if available. You can check
+without installing anything via `install.bat --check-python`.
