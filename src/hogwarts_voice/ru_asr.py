@@ -39,6 +39,8 @@ UNSAFE_GENERIC_ALIASES = frozenset({
 # with a conversational phrase would be unsafe in live gameplay.
 EXACT_ONLY_COMMANDS = frozenset({
     "Alohomora", "Finite", "Broomstick", "Map", "Inventory",
+    "Petrificus", "Conjuration", "Mount", "Quests", "Character",
+    "Talents", "Collections", "Challenges", "Mail", "Settings",
 })
 EXTRA_PRONUNCIATIONS = {
     "Lumos": ("люмос", "люмус", "люмас"),

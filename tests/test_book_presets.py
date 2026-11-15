@@ -96,6 +96,24 @@ class BookVoiceTests(unittest.TestCase):
         self.assertEqual(to_game_command("Map"), "AppertaMappa")
         self.assertEqual(to_game_command("Inventory"), "AppertaCodex")
         self.assertEqual(to_game_command("Finite"), "Finite")
+        for phrase, spell, game_command in [
+            ("петрификус тоталус", "Petrificus", "StealthTakedown"),
+            ("конжурация", "Conjuration", "Conjuration"),
+            ("призови гиппогрифа", "Mount", "AccioMount"),
+            ("открой задания", "Quests", "AppertaQuaestiones"),
+            ("открой персонажа", "Character", "AppertaMeritas"),
+            ("открой таланты", "Talents", "AppertaFalcultates"),
+            ("открой коллекции", "Collections", "AppertaCompendium"),
+            ("открой испытания", "Challenges", "AppertaIncantatem"),
+            ("открой письма", "Mail", "AppertaLiterae"),
+            ("открой настройки", "Settings", "AppertaConfiguratio"),
+        ]:
+            with self.subTest(phrase=phrase):
+                chosen, _ = match_incantation(
+                    phrase,self.book,enabled=self.allowed,style=STYLE_ROSMEN
+                )
+                self.assertEqual(chosen,spell)
+                self.assertEqual(to_game_command(chosen),game_command)
         with self.assertRaises(ValueError):
             to_game_command("Alohomora")
         for phrase in ("открой карты", "алохомору", "акцио метлы"):

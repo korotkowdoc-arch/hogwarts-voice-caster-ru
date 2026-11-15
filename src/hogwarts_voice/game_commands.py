@@ -14,6 +14,15 @@ IPC_RENAMES = {
     "Broomstick": "AccioBroomstick",
     "Map": "AppertaMappa",
     "Inventory": "AppertaCodex",
+    "Petrificus": "StealthTakedown",
+    "Mount": "AccioMount",
+    "Quests": "AppertaQuaestiones",
+    "Character": "AppertaMeritas",
+    "Talents": "AppertaFalcultates",
+    "Collections": "AppertaCompendium",
+    "Challenges": "AppertaIncantatem",
+    "Mail": "AppertaLiterae",
+    "Settings": "AppertaConfiguratio",
 }
 
 # The SpellCaster game mod accepts these base game command names as well as
@@ -26,7 +35,10 @@ SUPPORTED_BASE_COMMANDS = frozenset({
     "WingardiumLeviosa", "TransfiguraVerto", "Vanishment",
     "Crucio", "Imperio", "AvadaKedavra", "Smash",
     "AppareVestigium", "Finite", "AccioBroomstick",
-    "AppertaMappa", "AppertaCodex",
+    "AppertaMappa", "AppertaCodex", "Conjuration",
+    "StealthTakedown", "AccioMount", "AppertaQuaestiones",
+    "AppertaMeritas", "AppertaFalcultates", "AppertaCompendium",
+    "AppertaIncantatem", "AppertaLiterae", "AppertaConfiguratio",
 })
 
 def to_game_command(spell: str) -> str:

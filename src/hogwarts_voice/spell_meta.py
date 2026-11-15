@@ -27,6 +27,16 @@ READINGS = {
     "Broomstick": ("Акцио метла", "summon broom"),
     "Map": ("Открой карту", "open map"),
     "Inventory": ("Открой инвентарь", "open inventory"),
+    "Petrificus": ("Петрификус Тоталус", "stealth takedown"),
+    "Conjuration": ("Конжурация", "room of requirement"),
+    "Mount": ("Призови гиппогрифа", "summon mount"),
+    "Quests": ("Открой задания", "open quests"),
+    "Character": ("Открой персонажа", "open character"),
+    "Talents": ("Открой таланты", "open talents"),
+    "Collections": ("Открой коллекции", "open collections"),
+    "Challenges": ("Открой испытания", "open challenges"),
+    "Mail": ("Открой письма", "open owl mail"),
+    "Settings": ("Открой настройки", "open game settings"),
 }
 
 GROUPS = {
@@ -37,7 +47,10 @@ GROUPS = {
     "Dark Arts": ["Crucio", "Imperius", "AvadaKedavra"],
     "Essential": ["Stupefy", "Protego", "Oppugno", "Finisher"],
     "Transfiguration": ["Vanishment"],
-    "Actions": ["Alohomora", "Finite", "Broomstick", "Map", "Inventory"],
+    "Actions": ["Alohomora", "Finite", "Broomstick", "Map", "Inventory",
+                "Mount", "Quests", "Character", "Talents", "Collections",
+                "Challenges", "Mail", "Settings"],
+    "Contextual": ["Petrificus", "Conjuration"],
 }
 PALETTE = {
     "Force": ("#a887ef", "#2c2147", "СИЛОВОЕ"),
@@ -48,6 +61,7 @@ PALETTE = {
     "Essential": ("#e1cdaa", "#49392c", "ОСНОВНОЕ"),
     "Transfiguration": ("#a6c6a8", "#2a4030", "ТРАНСФИГУРАЦИЯ"),
     "Actions": ("#a2c9b9", "#223a35", "ДЕЙСТВИЯ"),
+    "Contextual": ("#c2b0e2", "#322942", "КОНТЕКСТ"),
 }
 
 def group_of(spell: str) -> str:

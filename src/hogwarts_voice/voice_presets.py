@@ -51,6 +51,16 @@ ROSMEN_READINGS = {
     "Broomstick": "Акцио метла",
     "Map": "Открой карту",
     "Inventory": "Открой инвентарь",
+    "Petrificus": "Петрификус Тоталус",
+    "Conjuration": "Конжурация",
+    "Mount": "Призови гиппогрифа",
+    "Quests": "Открой задания",
+    "Character": "Открой персонажа",
+    "Talents": "Открой таланты",
+    "Collections": "Открой коллекции",
+    "Challenges": "Открой испытания",
+    "Mail": "Открой письма",
+    "Settings": "Открой настройки",
 }
 
 # These ordinary expressions only work in the book-inspired mode; they are
