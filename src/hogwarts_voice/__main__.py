@@ -85,9 +85,11 @@ def main():
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"Config error: {exc}", flush=True)
         return 2
-    if selected_cfg.get("recognition_engine", "acoustic_dtw") == "acoustic_dtw" and (
-        args.dry_run or args.listen
-    ):
+    engine = selected_cfg.get("recognition_engine", "gigaam_ru")
+    if engine == "gigaam_ru" and (args.dry_run or args.listen):
+        from .ru_asr_listener import run as run_neural
+        return run_neural(args, selected_cfg)
+    if engine == "acoustic_dtw" and (args.dry_run or args.listen):
         from .dtw_listener import run as run_acoustic
         return run_acoustic(args, selected_cfg)
 

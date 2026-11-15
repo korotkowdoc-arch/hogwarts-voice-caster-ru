@@ -124,13 +124,13 @@ class App(ctk.CTk):
         ctk.CTkFrame(s, height=1, fg_color=BORDER).pack(fill="x", padx=23, pady=(0, 20))
 
         button(s, "Главная", self.draw_home).pack(fill="x", padx=17, pady=5)
-        button(s, "Тренировка заклинаний", self.open_wizard).pack(fill="x", padx=17, pady=5)
+        button(s, "Атлас заклинаний", self.open_wizard).pack(fill="x", padx=17, pady=5)
         button(s, "Импорт игровых иконок", self.import_icons).pack(fill="x", padx=17, pady=5)
         button(s, "Источник иконок", lambda: webbrowser.open(SOURCE_PAGE)).pack(fill="x", padx=17, pady=5)
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v0.9.1", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v1.0", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -387,6 +387,9 @@ class App(ctk.CTk):
         generation = self._proc_generation
         self.set_status("● ПРОВЕРКА МИКРОФОНА" if dry_run else "● РАСПОЗНАВАНИЕ АКТИВНО", GOLD)
         self.log("Запуск проверки микрофона..." if dry_run else "Запуск игрового распознавания...")
+        if self.config_data.get("recognition_engine", "gigaam_ru") == "gigaam_ru":
+            self.log("[engine] Русская нейросеть GigaAM v2. Обучение голосу не требуется.")
+            self.log("[engine] Для первой проверки разрешены только Люмос и Акцио.")
         if self.config_data.get("push_to_talk", True):
             self.log(f"[ptt] Зажми {self.config_data.get('ptt_key','F9')}, "
                      "произнеси ОДНО заклинание и отпусти кнопку.")
@@ -587,6 +590,15 @@ class Wizard:
         self.last_heard=""
         self.accept.configure(state="disabled")
         self.record.configure(state="normal")
+        if self.app.config_data.get("recognition_engine", "gigaam_ru") == "gigaam_ru":
+            self.record.configure(state="disabled")
+            self.reset_samples.configure(state="disabled")
+            self.notice.configure(
+                text="Новая русская нейросеть GigaAM распознаёт слова без обучения. "
+                     "Здесь можно посмотреть написание и произношение заклинания.",
+                text_color=GREEN
+            )
+            self.heard.configure(text="Проверка произношения — через главное меню.")
 
     def prev(self):
         if not self.busy and self.index:

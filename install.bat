@@ -9,7 +9,7 @@ echo.
 echo Fast mode: no speaker ID or heavy torch dependency.
 echo Logging details to install.log in this folder.
 if not exist "requirements.txt" goto :missingfiles
-if not exist "download_model.py" goto :missingfiles
+if not exist "download_gigaam.py" goto :missingfiles
 REM Some Windows Python launchers return exit code 0 even if a runtime is missing.
 REM Check an exact stdout marker produced by a REAL Python interpreter.
 set "PYTHON_CMD="
@@ -34,11 +34,11 @@ if not exist ".venv\Scripts\python.exe" goto :venvfail
 echo [2/4] Updating pip...
 ".venv\Scripts\python.exe" -m pip install --upgrade pip --disable-pip-version-check >> "%LOG%" 2>&1
 if errorlevel 1 goto :pipfail
-echo [3/4] Installing basic offline speech packages...
+echo [3/4] Installing offline neural speech packages...
 ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r "requirements.txt" >> "%LOG%" 2>&1
 if errorlevel 1 goto :depsfail
-echo [4/4] Downloading Russian speech model...
-".venv\Scripts\python.exe" "download_model.py" >> "%LOG%" 2>&1
+echo [4/4] Downloading and checking the Russian neural model (~236 MB)...
+".venv\Scripts\python.exe" -u "download_gigaam.py" >> "%LOG%" 2>&1
 if errorlevel 1 goto :modelfail
 echo [OK] Installation complete. Open run.bat.
 goto :success

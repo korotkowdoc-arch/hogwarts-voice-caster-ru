@@ -18,8 +18,13 @@
   "mic_diagnostics": true,
   "show_partials": true,
   "allow_untrained_vosk_fallback": false,
-  "recognition_engine": "acoustic_dtw",
+  "recognition_engine": "gigaam_ru",
   "dtw_threshold": 0.72,
   "dtw_margin": 0.065,
-  "ptt_key": "F9"
+  "ptt_key": "F9",
+  "enabled_spells": [
+    "Lumos",
+    "Accio"
+  ],
+  "asr_threads": 4
 }
