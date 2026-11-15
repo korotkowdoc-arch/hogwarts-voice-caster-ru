@@ -195,7 +195,7 @@ def run(args, cfg):
                 # Only the game's own UE4SS.log may positively confirm casts.
                 # Discover it lazily when Hogwarts Legacy is foreground; no
                 # user folder selection required for most Steam/Epic installs.
-                if bridge and mod_feedback is None and now-last_log_search > 3:
+                if bridge and game_focused() and mod_feedback is None and now-last_log_search > 3:
                     last_log_search = now
                     log = find_log(cfg.get("game_folder"), foreground_process_path())
                     if log:
@@ -339,9 +339,12 @@ def run(args, cfg):
                           f"press-to-dispatch={(time.monotonic()-started)*1000:.0f}ms",
                           flush=True)
                     if ok and not dry_run:
-                        print("[ipc] Command queued; waiting for game log confirmation. "
-                              "If no effect, check spell target/context and UE4SS.log.",
-                              flush=True)
+                        if mod_feedback is not None:
+                            print("[ipc] Command queued; awaiting UE4SS log result.",
+                                  flush=True)
+                        else:
+                            print("[ipc] Command queued; UE4SS.log not found. "
+                                  "Actual cast is UNVERIFIED.",flush=True)
 
                 try:
                     captured, audio = chunks.get(timeout=.025)

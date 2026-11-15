@@ -44,6 +44,7 @@ class _Pending:
     command: str
     spoken: str
     since: float
+    busy_reported: bool = False
 
 def find_log(game_folder: str | Path | None = None,
              game_executable: str | Path | None = None) -> Path | None:
@@ -114,7 +115,10 @@ class ModLogMonitor:
         if busy:
             for item in self.pending:
                 if item.command.casefold() == busy.group(1).casefold():
-                    result.append(ModEvent("busy", item.spoken, "spell tool busy; retrying"))
+                    if not item.busy_reported:
+                        result.append(ModEvent("busy", item.spoken,
+                                               "spell tool busy; retrying"))
+                        item.busy_reported = True
                     break
         if GENERAL_FAIL.search(line) and self.active_attempt:
             event = self._resolve(self.active_attempt, "failed", "UE4SS failed to cast", now)
@@ -156,7 +160,7 @@ class ModLogMonitor:
                     # avoid consuming megabytes of unrelated UE4SS logs per frame
                     blob = stream.read(min(size - self.offset, 1_000_000))
                     self.offset = stream.tell()
-                for line in blob.decode("utf-8", "replace").splitlines()[:self.max_lines_per_poll]:
+                for line in blob.decode("utf-8", "replace").splitlines():
                     events.extend(self._parse(line, now))
         except OSError:
             pass
