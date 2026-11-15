@@ -119,3 +119,19 @@ HLW_ENABLE_CLOUD_TTS=1 and GEMINI_API_KEY in CMD before starting the bridge;
 then run demo-voice.ps1. The voice is a generic synthetic voice, not
 Sebastian's/Ominis's/Poppy's original actor voice. It is NOT wired
 to Sonorus TTS, and does not speak inside Hogwarts Legacy yet.
+
+
+## Optional OpenAI Speech API subset — future compatibility experiment
+
+If cloud TTS is explicitly enabled with HLW_ENABLE_CLOUD_TTS=1,
+the bridge also supports POST /v1/audio/speech with JSON input:
+
+    {"model":"tts-1","voice":"alloy","input":"Привет!","response_format":"wav"}
+
+It always calls only the fixed Gemini 3.8 Flash TTS model, regardless
+of the incoming logical model label. Available voice aliases:
+alloy → Kore, nova → Aoede, echo → Charon, fable → Puck.
+Unsupported MP3 responses get a clear HTTP 400, not mislabeled WAV.
+Cached repetitions don't use new requests; max 20 new requests/day.
+**Sonorus actual TTS compatibility remains unverified** — initial game
+tests should still use subtitles, not speech.
