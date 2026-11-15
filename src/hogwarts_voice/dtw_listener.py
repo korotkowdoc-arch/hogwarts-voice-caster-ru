@@ -14,7 +14,7 @@ import time
 
 from .bridge import SpellBridge
 from .dtw_voice import DTWBank, MIN_SCORE, MIN_MARGIN
-from .template_voice import SpeechSegmenter
+from .vad import AdaptiveSpeechSegmenter
 from .windows import KeyboardState, VK_F9, down, game_focused, foreground_process_name
 
 def run(args, cfg):
@@ -53,7 +53,7 @@ def run(args, cfg):
     last_mod_ready = None
     block_ms = cfg.get("block_ms", 20)
     frames = round(block_ms * 16000 / 1000)
-    segmenter = SpeechSegmenter(silence_ms=100, min_ms=180)
+    segmenter = AdaptiveSpeechSegmenter(silence_ms=170, min_speech_ms=170)
     mic = cfg.get("mic_device")
     dry_run = bool(args.dry_run)
     require_focus = bool(cfg.get("require_game_focus", True))
@@ -190,6 +190,8 @@ def run(args, cfg):
                 waiting += 1
                 task_tag = tag
                 duration = len(phrase) / 32000
+                if cfg.get("mic_diagnostics", True):
+                    print(f"[segment] complete utterance: {duration*1000:.0f}ms", flush=True)
                 # Approximation: includes pre-roll and tail silence.
                 began = captured - duration
                 started_at = time.monotonic()

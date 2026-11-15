@@ -129,7 +129,7 @@ class App(ctk.CTk):
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v0.8", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v0.8.1", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -622,9 +622,14 @@ class Wizard:
                               + ("Готово к проверке ✓" if ready else "запиши ещё")),
                         text_color=GREEN if ready else GOLD
                     )
+                    if quality is not None and quality < .75:
+                        self.notice.configure(
+                            text="Записи сильно различаются. Лучше сбросить и записать заново.",
+                            text_color=RED,
+                        )
                     self.heard.configure(
-                        text=("Сходство тренировочных записей: "
-                              + f"{quality:.3f}" if quality is not None
+                        text=("Согласованность примеров: " + f"{quality:.3f}"
+                              + " (это не точность распознавания)" if quality is not None
                               else "Шаблон звучания сохранён без Vosk")
                     )
                     self.accept.configure(state="disabled")

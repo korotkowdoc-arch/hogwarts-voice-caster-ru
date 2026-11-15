@@ -67,13 +67,15 @@ def extract(pcm: bytes):
     n = (len(raw) // HOP) * HOP
     rms = np.sqrt((raw[:n].reshape(-1, HOP) ** 2).mean(axis=1))
     peak = float(rms.max(initial=0))
-    if peak < 0.017:
+    if peak < 0.011:
         raise ValueError("Микрофон не слышит речь")
-    active = np.flatnonzero(rms >= max(0.013, peak * 0.24))
-    if len(active) < 13:
+    # A high hard floor had dropped low-energy consonants, particularly
+    # the beginning of "Lumos". Keep weak phonemes with enough context.
+    active = np.flatnonzero(rms >= max(0.008, peak * 0.15))
+    if len(active) < 9:
         raise ValueError("Слишком короткое произношение")
-    start = max(0, active[0] * HOP - 400)
-    end = min(len(raw), (active[-1] + 1) * HOP + 400)
+    start = max(0, active[0] * HOP - 640)
+    end = min(len(raw), (active[-1] + 1) * HOP + 640)
     speech = raw[start:end]
     duration = len(speech) / SAMPLE_RATE
     if not 0.19 <= duration <= 2.5:

@@ -23,6 +23,16 @@ class DTWTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract(b"\x00\x00"*16000)
 
+    def test_quiet_realistic_signal_is_not_rejected(self):
+        # 0.025 peak amplitude corresponds to quiet speech, which the
+        # old 0.017-rms cutoff would reject after energy averaging.
+        slow = audio(f=240, seconds=.53)
+        pcm = np.frombuffer(slow, dtype="<i2").astype(np.float32)
+        quiet = (pcm * .08).astype("<i2").tobytes()
+        features, duration = extract(quiet)
+        self.assertEqual(features.shape, (NUM_FRAMES, FEAT_DIM))
+        self.assertGreater(duration, .19)
+
     def test_feature_shape(self):
         f,d=extract(audio())
         self.assertEqual(f.shape,(NUM_FRAMES,FEAT_DIM))
