@@ -44,6 +44,29 @@ class ServerTests(unittest.TestCase):
         with urlopen(req,timeout=3) as response:
             return response.headers.get("Content-Type"),response.read().decode()
 
+    def test_dashboard_is_local_and_never_contains_secrets(self):
+        req=Request(self.base+"/")
+        with urlopen(req,timeout=3) as response:
+            html=response.read().decode("utf-8")
+            self.assertIn("text/html",response.headers.get("Content-Type"))
+            self.assertIn("Hogwarts Living World",html)
+            self.assertIn("frame-ancestors 'none'",response.headers.get("Content-Security-Policy"))
+            self.assertNotIn("GEMINI_API_KEY",html)
+
+    def test_rejects_unsafe_cross_origin_post(self):
+        req=Request(self.base+"/v1/chat/completions",data=b'{}',
+                    headers={"Content-Type":"application/json","Origin":"https://random-site.example"})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(req,timeout=3)
+        self.assertEqual(caught.exception.code,403)
+
+    def test_rejects_simple_cross_site_content_type(self):
+        req=Request(self.base+"/v1/chat/completions",data=b'{}',
+                    headers={"Content-Type":"text/plain"})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(req,timeout=3)
+        self.assertEqual(caught.exception.code,415)
+
     def test_chat_response(self):
         _,body=self.request("/v1/chat/completions",{"messages":[{"role":"user","content":"Привет"}]})
         self.assertEqual(json.loads(body)["choices"][0]["message"]["content"],"Здравствуй, волшебник!")
