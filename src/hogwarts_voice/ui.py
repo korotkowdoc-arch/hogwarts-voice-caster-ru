@@ -95,8 +95,8 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Hogwarts Voice Caster · RU")
-        self.root.geometry("620x520")
-        self.root.minsize(550, 460)
+        self.root.geometry("620x595")
+        self.root.minsize(550, 540)
         self.root.configure(bg=BG)
         self.proc = None
         self.wizard = None
@@ -123,7 +123,8 @@ class App:
         self.status.pack(anchor="w", pady=(0, 14))
         label(panel, "Голосовой профиль хранится только на этом ПК.\n"
                      "Записи не сохраняются, только отпечатки голоса.",
-              color=MUTED, justify="left").pack(anchor="w", pady=(0, 18))
+              color=MUTED, justify="left").pack(anchor="w", pady=(0, 8))
+        self.add_microphone_picker(panel)
         actions = tk.Frame(panel, bg=SURFACE)
         actions.pack(fill="x", pady=5)
         self.play = tk.Button(actions, text="▶  Начать колдовать", font=("Segoe UI", 13, "bold"),
@@ -140,6 +141,35 @@ class App:
         label(panel, "F8 — пауза · Локальное распознавание · Нужен мод SpellCaster UE4SS",
               color=MUTED, size=9).pack(anchor="w", pady=(16, 0))
         self.refresh()
+
+    def add_microphone_picker(self, panel):
+        frame = tk.Frame(panel, bg=SURFACE)
+        frame.pack(fill="x", pady=(0, 8))
+        label(frame, "Микрофон:", color=MUTED, size=10).pack(side="left", padx=(0, 10))
+        self.mic_choices = [(None, "По умолчанию")]
+        try:
+            import sounddevice as sd
+            for number, device in enumerate(sd.query_devices()):
+                if device.get("max_input_channels", 0) > 0:
+                    self.mic_choices.append((number, f"{number}: {device['name']}"))
+        except Exception:
+            pass
+        names = [value for _, value in self.mic_choices]
+        stored = self.config.get("mic_device")
+        current = next((i for i, (idx, _) in enumerate(self.mic_choices) if idx == stored), 0)
+        self.mic_index = tk.StringVar(value=names[current])
+        selector = ttk.Combobox(frame, state="readonly", values=names, textvariable=self.mic_index)
+        selector.pack(side="left", fill="x", expand=True)
+        selector.bind("<<ComboboxSelected>>", self.change_mic)
+
+    def change_mic(self, _event=None):
+        label_text = self.mic_index.get()
+        for index, name in self.mic_choices:
+            if label_text == name:
+                self.config["mic_device"] = index
+                DEFAULT_CONFIG.write_text(json.dumps(self.config, ensure_ascii=False, indent=2) + "\n",
+                                          encoding="utf-8")
+                break
 
     def refresh(self):
         self.profile = VoiceProfile.load()
@@ -317,7 +347,8 @@ class Wizard:
                 import winsound
                 winsound.Beep(740, 95)
             wav = sd.rec(int(2.8 * 16000), samplerate=16000,
-                         channels=1, dtype="float32")
+                         channels=1, dtype="float32",
+                         device=self.app.config.get("mic_device"))
             sd.wait()
             mono = wav.flatten().copy()
             embedding = self.encoder.encode_float(mono)
