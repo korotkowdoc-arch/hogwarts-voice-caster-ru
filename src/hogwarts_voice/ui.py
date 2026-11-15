@@ -282,6 +282,7 @@ class App(ctk.CTk):
                 "--dry-run" if dry_run else "--listen"]
         env = os.environ.copy()
         env["PYTHONPATH"] = str(ROOT / "src")
+        env["PYTHONIOENCODING"] = "utf-8"  # Avoid mojibake in the in-app log on Russian Windows.
         flags = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
         try:
             proc = subprocess.Popen(
