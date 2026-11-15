@@ -34,6 +34,11 @@ DEFAULT_SPELLS: dict[str, list[str]] = {
     "AvadaKedavra": ["авада кедавра"],
     "Finisher": ["древняя магия"],
     "AppareVestigium": ["аппаре вестигиум"],
+    "Alohomora": ["алохомора"],
+    "Finite": ["фините", "фините инкантатем"],
+    "Broomstick": ["акцио метла", "вызови метлу"],
+    "Map": ["открой карту", "апперта маппа"],
+    "Inventory": ["открой инвентарь", "апперта кодекс"],
 }
 
 _WORDS = re.compile(r"[^\w\s]+", re.UNICODE)

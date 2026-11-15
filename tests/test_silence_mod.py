@@ -8,7 +8,7 @@ from hogwarts_voice.silence_mod import (
 class SilenceModTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.game = self.root / "Hogwarts Legacy"
         self.paks = self.game / "Phoenix" / "Content" / "Paks"
         self.paks.mkdir(parents=True)
@@ -41,7 +41,7 @@ class SilenceModTests(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             install_nonverbal(self.source, self.root/"missing")
         copied=install_nonverbal(self.source,self.game)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(FileNotFoundError):
             set_nonverbal_enabled(copied,self.root/"unrelated",False)
     def test_does_not_remove_unrelated_mods(self):
         other=self.paks / "~mods" / "other.pak"

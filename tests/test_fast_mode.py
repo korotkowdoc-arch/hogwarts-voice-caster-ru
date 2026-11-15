@@ -9,7 +9,7 @@ class FastModeTests(unittest.TestCase):
         cfg = load_config(DEFAULT_CONFIG)
         self.assertFalse(cfg["speaker_verification"])
         self.assertEqual(cfg["stable_partial_updates"], 1)
-        self.assertEqual(cfg["block_ms"], 20)
+        self.assertEqual(cfg["block_ms"], 10)
 
     def test_first_partial_is_enough(self):
         gate = StreamGate(Spellbook(DEFAULT_SPELLS), stable_updates=1,
