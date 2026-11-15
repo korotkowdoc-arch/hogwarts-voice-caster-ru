@@ -61,7 +61,14 @@ class GameOverlay:
 
     def _click_through(self):
         user32=ctypes.WinDLL("user32",use_last_error=True)
+        # Tk on Windows sometimes exposes an inner child HWND through
+        # winfo_id; styles must be applied to its real TOP-LEVEL ancestor.
         hwnd=self.window.winfo_id()
+        user32.GetAncestor.argtypes=[ctypes.c_void_p,ctypes.c_uint]
+        user32.GetAncestor.restype=ctypes.c_void_p
+        root_hwnd=user32.GetAncestor(hwnd,2)  # GA_ROOT
+        if root_hwnd:
+            hwnd=root_hwnd
         GWL_EXSTYLE=-20
         WS_EX_TRANSPARENT=0x20
         WS_EX_NOACTIVATE=0x08000000
