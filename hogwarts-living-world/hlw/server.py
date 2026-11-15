@@ -15,6 +15,7 @@ from .world import World
 from .compat import normalize_messages, response_type, extract_context, CompatibilityError
 from .inbox import GameEventInbox
 from .speech import CloudSpeech, SpeechUnavailable
+from .dashboard import HTML
 
 def data_dir() -> Path:
     root = os.environ.get("HLW_DATA_DIR")
@@ -51,6 +52,19 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             # Avoid log messages containing player prompts, API keys or query strings.
             pass
 
+        def _dashboard(self):
+            raw=HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type","text/html; charset=utf-8")
+            self.send_header("Content-Length",str(len(raw)))
+            self.send_header("Cache-Control","no-store")
+            self.send_header("X-Content-Type-Options","nosniff")
+            self.send_header("Content-Security-Policy",
+                "default-src 'none'; script-src 'unsafe-inline'; "
+                "style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
+            self.end_headers()
+            self.wfile.write(raw)
+
         def _answer(self, status: int, payload: dict):
             raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
             self.send_response(status)
@@ -76,6 +90,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             if not self._authorized():
                 return self._answer(401,{"error":"unauthorized"})
             url = urlparse(self.path)
+            if url.path in ("/","/ui"):
+                return self._dashboard()
             try:
                 if url.path == "/health":
                     return self._answer(200,{"version":__version__,"mode":"cloud_free_only",
@@ -108,6 +124,11 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 return self._answer(400,{"error":str(exc)})
 
         def do_POST(self):
+            origin=self.headers.get("Origin")
+            if origin and origin not in ("http://127.0.0.1:8765","http://localhost:8765"):
+                return self._answer(403,{"error":"cross_site_request_denied"})
+            if not self.headers.get("Content-Type","").lower().startswith("application/json"):
+                return self._answer(415,{"error":"application_json_required"})
             if not self._authorized():
                 return self._answer(401,{"error":"unauthorized"})
             try:
