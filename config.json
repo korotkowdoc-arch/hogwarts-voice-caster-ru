@@ -1,13 +1,16 @@
 {
   "samplerate": 16000,
-  "block_ms": 32,
-  "stable_partial_updates": 2,
+  "block_ms": 20,
+  "stable_partial_updates": 1,
   "min_gap_ms": 0,
-  "repeat_gap_ms": 500,
+  "repeat_gap_ms": 450,
   "mic_device": null,
   "require_game_focus": true,
   "push_to_talk": false,
-  "verbose": true,
+  "verbose": false,
   "grammar_mode": "constrained",
-  "speaker_threshold": 0.68
+  "speaker_verification": false,
+  "speaker_threshold": 0.68,
+  "debug_latency": true,
+  "performance_mode": "fast"
 }
