@@ -95,8 +95,8 @@ class App:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Hogwarts Voice Caster · RU")
-        self.root.geometry("620x595")
-        self.root.minsize(550, 540)
+        self.root.geometry("620x670")
+        self.root.minsize(550, 590)
         self.root.configure(bg=BG)
         self.proc = None
         self.wizard = None
@@ -107,38 +107,38 @@ class App:
         self.titlebar()
         self.main()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
-        if not self.profile.ready():
-            self.root.after(350, self.open_wizard)
+        # Voice enrollment is optional: nothing delays the first game launch.
 
     def titlebar(self):
         frame = tk.Frame(self.root, bg=BG, pady=22)
         frame.pack(fill="x")
         label(frame, "HOGWARTS VOICE CASTER", size=22, weight="bold").pack()
-        label(frame, "Тихая магия. Твой голос. Твои заклинания.", color=MUTED).pack(pady=(6, 0))
+        label(frame, "Твои заклинания. Минимум ожидания.", color=MUTED).pack(pady=(6, 0))
 
     def main(self):
         panel = tk.Frame(self.root, bg=SURFACE, padx=24, pady=22)
         panel.pack(fill="both", expand=True, padx=28, pady=(5, 20))
         self.status = label(panel, "", size=12, color=PINK, justify="left", wraplength=460)
         self.status.pack(anchor="w", pady=(0, 14))
-        label(panel, "Голосовой профиль хранится только на этом ПК.\n"
-                     "Записи не сохраняются, только отпечатки голоса.",
+        label(panel, "Готово без обучения. Сначала проверь микрофон,\n"
+                     "затем запускай быстрые голосовые заклинания.",
               color=MUTED, justify="left").pack(anchor="w", pady=(0, 8))
         self.add_microphone_picker(panel)
+        self.add_speed_picker(panel)
         actions = tk.Frame(panel, bg=SURFACE)
         actions.pack(fill="x", pady=5)
         self.play = tk.Button(actions, text="▶  Начать колдовать", font=("Segoe UI", 13, "bold"),
                               command=lambda: self.launch(False), bg="#9cc7ff", fg=BG,
                               activebackground="#d4e5ff", relief="flat", padx=14, pady=9)
         self.play.pack(fill="x", pady=(0, 8))
-        tk.Button(actions, text="🎤  Обучить голос / Изменить произношение",
+        tk.Button(actions, text="🎤  Настроить произношение (по желанию)",
                   command=self.open_wizard, bg=DARK, fg=INK, relief="flat",
                   font=("Segoe UI", 11), pady=9).pack(fill="x", pady=4)
         tk.Button(actions, text="Проверить распознавание без игры", command=lambda: self.launch(True),
                   bg=DARK, fg=INK, relief="flat", font=("Segoe UI", 11), pady=9).pack(fill="x", pady=4)
         tk.Button(actions, text="Остановить", command=self.stop,
                   bg=DARK, fg=MUTED, relief="flat", font=("Segoe UI", 11), pady=7).pack(fill="x", pady=4)
-        label(panel, "F8 — пауза · Локальное распознавание · Нужен мод SpellCaster UE4SS",
+        label(panel, "F8 — пауза · Без интернета · Нужен UE4SS-мод SpellCaster",
               color=MUTED, size=9).pack(anchor="w", pady=(16, 0))
         self.refresh()
 
@@ -171,24 +171,49 @@ class App:
                                           encoding="utf-8")
                 break
 
+    def add_speed_picker(self, panel):
+        frame = tk.Frame(panel, bg=SURFACE)
+        frame.pack(fill="x", pady=(0, 7))
+        label(frame, "Режим:", color=MUTED, size=10).pack(side="left", padx=(0, 23))
+        values = ["Максимальная скорость", "Сбалансированный"]
+        selected = values[1] if self.config.get("performance_mode") == "balanced" else values[0]
+        self.speed_choice = tk.StringVar(value=selected)
+        selector = ttk.Combobox(frame, state="readonly", values=values,
+                                textvariable=self.speed_choice)
+        selector.pack(fill="x", expand=True)
+        selector.bind("<<ComboboxSelected>>", self.change_speed)
+        label(panel, "Быстрый режим реагирует на первое распознавание, но может ошибаться.",
+              size=9, color=MUTED).pack(anchor="w", pady=(0, 6))
+
+    def change_speed(self, _event=None):
+        fast = self.speed_choice.get() == "Максимальная скорость"
+        self.config["performance_mode"] = "fast" if fast else "balanced"
+        self.config["block_ms"] = 20 if fast else 32
+        self.config["stable_partial_updates"] = 1 if fast else 2
+        DEFAULT_CONFIG.write_text(
+            json.dumps(self.config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+        self.refresh()
+
     def refresh(self):
         self.profile = VoiceProfile.load()
-        total = sum(len(v) for v in self.profile.takes.values())
-        spells = sum(bool(v) for v in self.profile.takes.values())
-        if self.profile.ready():
-            self.status.configure(text=f"● Голос обучен · {total} записей · {spells} заклинаний",
+        if self.config.get("speaker_verification", False):
+            ready = self.profile.ready()
+            self.status.configure(
+                text=("● Проверка голоса включена" if ready
+                      else "● Проверка голоса требует обучения. Отключи её в config.json."),
+                fg="#a7edcc" if ready else PINK)
+            self.play.configure(state="normal" if ready else "disabled")
+        else:
+            self.status.configure(text="● Быстрый режим · Проверка личности отключена",
                                   fg="#a7edcc")
             self.play.configure(state="normal")
-        else:
-            self.status.configure(text=f"● Нужно обучение · {total}/6 записей, минимум 2 заклинания",
-                                  fg=PINK)
-            self.play.configure(state="disabled")
 
     def launch(self, test=False):
         if self.proc and self.proc.poll() is None:
             messagebox.showinfo("Уже запущено", "Распознавание уже работает.")
             return
-        if not test and not self.profile.ready():
+        if not test and self.config.get("speaker_verification", False) and not self.profile.ready():
             self.open_wizard()
             return
         flags = subprocess.CREATE_NEW_CONSOLE if sys.platform == "win32" else 0
@@ -223,6 +248,7 @@ class Wizard:
         self.book = app.book
         self.profile = VoiceProfile.load()
         self.spells = list(self.book.entries)
+        self.practice = {}
         self.index = 0
         self.last_guess = ""
         self.busy = False
@@ -232,7 +258,7 @@ class Wizard:
 
         win = tk.Toplevel(app.root)
         self.win = win
-        win.title("Обучение магии · Мой голос")
+        win.title("Тренировка произношения · Заклинания")
         win.geometry("650x730")
         win.minsize(540, 640)
         win.configure(bg=BG)
@@ -278,8 +304,8 @@ class Wizard:
         self.skip.pack(side="right")
         tk.Button(frame, text="Завершить настройку", command=self.finish,
                   bg=BG, fg=MUTED, relief="flat", pady=8).pack(pady=4)
-        label(frame, "Записи не отправляются в интернет и не сохраняются.\n"
-                     "Голосовой отпечаток не гарантирует защиту от поддельного голоса.",
+        label(frame, "Записи остаются в памяти только во время распознавания.\n"
+                     "Сохраняются лишь подтверждённые тобой варианты произношения.",
               size=9, color=MUTED, justify="center").pack(side="bottom")
         self.draw()
         win.after(120, self.poll)
@@ -296,13 +322,13 @@ class Wizard:
         self.name_en.configure(text=spell)
         self.phonetic.configure(text=f"English pronunciation: {phon}")
         self.progress.configure(text=f"Заклинание {self.index + 1} из {len(self.spells)}")
-        self.count_label.configure(text=f"Записей: {min(self.profile.count(spell), 3)} / 3")
+        self.count_label.configure(text=f"Попыток: {min(self.practice.get(spell, 0), 3)} / 3")
         self.notice.configure(text="Нажми на микрофон, дождись сигнала и произнеси заклинание.")
         self.last_guess = ""
         self.guess_label.configure(text="Распознавание произношения: —")
         self.alias.configure(state="disabled")
         self.back.configure(state="normal" if self.index else "disabled")
-        self.skip.configure(text="Далее →" if self.profile.count(spell) >= 3 else "Пропустить →")
+        self.skip.configure(text="Далее →" if self.practice.get(spell, 0) >= 3 else "Пропустить →")
         self.record.configure(state="normal")
 
     def prev(self):
@@ -328,7 +354,7 @@ class Wizard:
         self.back.configure(state="disabled")
         self.skip.configure(state="disabled")
         self.alias.configure(state="disabled")
-        self.notice.configure(text="Подготовка записи и модели голоса…", fg=ACCENT)
+        self.notice.configure(text="Подготовка микрофона…", fg=ACCENT)
         spell = self.spell
         threading.Thread(target=self.worker, args=(spell,), daemon=True).start()
 
@@ -336,9 +362,7 @@ class Wizard:
         try:
             import numpy as np
             import sounddevice as sd
-            from .speaker import SpeakerEncoder
-            if self.encoder is None:
-                self.encoder = SpeakerEncoder()
+            # Calibration uses Vosk alone. Speaker identity model is optional.
             if self.model is None and MODEL.is_dir():
                 from vosk import Model
                 self.model = Model(str(MODEL))
@@ -351,7 +375,12 @@ class Wizard:
                          device=self.app.config.get("mic_device"))
             sd.wait()
             mono = wav.flatten().copy()
-            embedding = self.encoder.encode_float(mono)
+            embedding = None
+            if self.app.config.get("speaker_verification", False):
+                from .speaker import SpeakerEncoder
+                if self.encoder is None:
+                    self.encoder = SpeakerEncoder()
+                embedding = self.encoder.encode_float(mono)
             heard = ""
             if self.model:
                 from vosk import KaldiRecognizer
@@ -377,18 +406,20 @@ class Wizard:
                     self.back.configure(state="normal" if self.index else "disabled")
                 elif kind == "result":
                     embedding, heard = result
-                    self.profile.add_take(spell, embedding)
-                    self.profile.save()
+                    if embedding is not None:
+                        self.profile.add_take(spell, embedding)
+                        self.profile.save()
+                    self.practice[spell] = self.practice.get(spell, 0) + 1
                     self.busy = False
-                    self.notice.configure(text="Голосовой отпечаток принят ✓", fg="#a7edcc")
-                    self.count_label.configure(text=f"Записей: {min(self.profile.count(spell),3)} / 3")
+                    self.notice.configure(text="Попытка записана ✓", fg="#a7edcc")
+                    self.count_label.configure(text=f"Попыток: {min(self.practice[spell], 3)} / 3")
                     self.guess_label.configure(text=f"Распознано: {heard or '(не разобрано)'}")
                     self.last_guess = heard
                     self.alias.configure(state="normal" if heard else "disabled")
                     self.record.configure(state="normal")
                     self.skip.configure(state="normal")
                     self.back.configure(state="normal" if self.index else "disabled")
-                    if self.profile.count(spell) >= 3 and self.index + 1 < len(self.spells):
+                    if self.practice.get(spell, 0) >= 3 and self.index + 1 < len(self.spells):
                         # Give a moment to inspect ASR result and explicitly accept an alias.
                         self.notice.configure(text="3/3 готово. Нажми «Далее» или запомни вариант.", fg="#a7edcc")
                     self.app.refresh()
@@ -413,11 +444,7 @@ class Wizard:
         if self.busy:
             messagebox.showinfo("Запись", "Сначала заверши текущую запись.", parent=self.win)
             return
-        if not self.profile.ready():
-            if not messagebox.askyesno("Обучение не завершено",
-                                       "Для применения заклинаний нужен профиль из 6 записей "
-                                       "хотя бы двух заклинаний. Выйти сейчас?", parent=self.win):
-                return
+        # Pronunciation practice is optional. No enrollment gate in fast mode.
         self.win.destroy()
         self.app.wizard = None
         self.app.refresh()
