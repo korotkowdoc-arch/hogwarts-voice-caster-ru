@@ -110,3 +110,12 @@ The next milestone is a genuine game-side adapter with verified hooks.
 - Two UE4SS installations: follow Sonorus's single-install compatibility guide.
 
 No external requests were made in CI: all provider calls use mocks.
+
+
+## Separate cloud Russian voice experiment (not in game)
+
+If you want to test Google Gemini's free cloud speech generation, set
+HLW_ENABLE_CLOUD_TTS=1 and GEMINI_API_KEY in CMD before starting the bridge;
+then run demo-voice.ps1. The voice is a generic synthetic voice, not
+Sebastian's/Ominis's/Poppy's original actor voice. It is NOT wired
+to Sonorus TTS, and does not speak inside Hogwarts Legacy yet.
