@@ -150,3 +150,17 @@ Copyright 2024–2026 Pierre Cheneau) и бинарники не включен�
 Русская модель Vosk распространяется по условиям Apache 2.0.
 Неофициальный фанатский проект, не связанный с Warner Bros.
 или Avalanche Software.
+
+
+## If install.bat closes immediately
+Earlier versions accidentally used Unix LF endings, which may break cmd.exe.
+Download the latest ZIP again and EXTRACT it to a folder before opening install.bat.
+The updated script uses Windows CRLF and pauses on both success and failure.
+It also writes install.log next to the script, including details about failures.
+The fast mode needs only install.bat; optional voice ID is installed separately.
+If it still closes, open a Command Prompt in the extracted folder and run:
+
+```bat
+cmd /d /k install.bat
+```
+

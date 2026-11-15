@@ -25,3 +25,17 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -m unittest discover -s tests -v
+
+      - name: Check Windows raw line endings
+        if: runner.os == 'Windows'
+        run: python tests/check_batch.py
+      - name: Smoke-test Windows batch launchers
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call install.bat --self-test
+          if errorlevel 1 exit /b 1
+          call run.bat --self-test
+          if errorlevel 1 exit /b 1
+          call install-voice-id.bat --self-test
+          if errorlevel 1 exit /b 1

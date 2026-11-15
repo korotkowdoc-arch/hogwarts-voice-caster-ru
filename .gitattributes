@@ -1,0 +1,3 @@
+# Preserve CRLF verbatim in GitHub ZIP downloads and on Windows.
+*.bat -text
+*.cmd -text
