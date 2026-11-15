@@ -47,6 +47,14 @@ class InboxTests(unittest.TestCase):
         self.assertEqual(self.inbox.poll_once()["applied"],1)
         self.assertEqual(self.world.snapshot("slot_1","poppy")["affinity"],5)
 
+    def test_oversized_completed_line_does_not_block_next_valid_event(self):
+        self.path.write_bytes(b"x"*25000+b"\n")
+        self.write({"player_id":"slot_1","npc_id":"poppy","event":"gift_given","event_id":"valid_after_long"})
+        stats=self.inbox.poll_once()
+        self.assertEqual(stats["rejected"],1)
+        self.assertEqual(stats["applied"],1)
+        self.assertEqual(self.world.snapshot("slot_1","poppy")["affinity"],5)
+
     def test_restart_preserves_file_cursor(self):
         self.write({"player_id":"slot_1","npc_id":"ominis","event":"player_helped","event_id":"a"})
         self.assertEqual(self.inbox.poll_once()["applied"],1)
