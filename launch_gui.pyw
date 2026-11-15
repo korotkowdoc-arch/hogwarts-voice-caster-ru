@@ -15,8 +15,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 try:
     from hogwarts_voice.ui import main
-    raise SystemExit(main())
-except BaseException as exc:
+    main()
+except Exception as exc:
     logdir = Path(os.environ.get("LOCALAPPDATA") or ROOT) / "HogwartsVoiceCasterRU"
     try:
         logdir.mkdir(parents=True, exist_ok=True)

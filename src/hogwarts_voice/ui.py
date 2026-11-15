@@ -183,7 +183,8 @@ class App(ctk.CTk):
         settings = ctk.CTkFrame(body, fg_color=PANEL, corner_radius=16,
                                 border_width=1, border_color=BORDER)
         settings.pack(fill="x", pady=(0, 16))
-        settings.grid_columnconfigure((0,1),weight=1)
+        settings.grid_columnconfigure(0,weight=1)
+        settings.grid_columnconfigure(1,weight=1)
         text(settings, "УСТРОЙСТВО ВВОДА", size=10, color=GOLD,
              weight="bold").grid(row=0, column=0, padx=(20,14), pady=(18,6), sticky="w")
         text(settings, "РЕЖИМ РАСПОЗНАВАНИЯ", size=10, color=GOLD,
@@ -217,7 +218,8 @@ class App(ctk.CTk):
 
         actions = ctk.CTkFrame(body, fg_color="transparent")
         actions.pack(fill="x", pady=(0, 15))
-        actions.grid_columnconfigure((0,1),weight=1)
+        actions.grid_columnconfigure(0,weight=1)
+        actions.grid_columnconfigure(1,weight=1)
         button(actions, "ПРОВЕРИТЬ МИКРОФОН", lambda: self.start(True),
                height=43).grid(row=0,column=0,sticky="ew",padx=(0,8))
         button(actions, "ОСТАНОВИТЬ", self.stop, height=43).grid(
