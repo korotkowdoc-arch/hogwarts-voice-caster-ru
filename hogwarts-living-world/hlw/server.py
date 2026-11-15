@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 from . import __version__
 from .providers import DailyBudget, FreeRouter, NoFreeProvider
 from .world import World
+from .compat import normalize_messages, response_type, extract_context, CompatibilityError
 
 def data_dir() -> Path:
     root = os.environ.get("HLW_DATA_DIR")
@@ -62,7 +63,9 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             try:
                 if url.path == "/health":
                     return self._answer(200,{"version":__version__,"mode":"cloud_free_only",
-                                             "configured_providers":router.configured,"world":"ready"})
+                                             "configured_providers":router.configured,"world":"ready",
+                                             "sonorus":"openai_compatible_chat_completions_beta",
+                                             "text_only":True,"game_hooks_installed":False})
                 if url.path == "/v1/models":
                     return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
                 if url.path == "/v1/world/outbox":
@@ -88,23 +91,29 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                     return self._answer(200,{"acknowledged":world.acknowledge(body["player_id"],body["ids"])})
                 if path != "/v1/chat/completions":
                     return self._answer(404,{"error":"not_found"})
-                messages = body.get("messages")
-                if not isinstance(messages,list) or not messages or len(messages)>36 or any(
-                        not isinstance(m,dict) or m.get("role") not in ("system","user","assistant")
-                        or not isinstance(m.get("content"),str) or len(m["content"])>10_000 for m in messages):
-                    raise ValueError("messages: expected up to 36 text-only system/user/assistant messages")
-                meta = body.get("metadata") or {}
-                if meta and (not isinstance(meta,dict) or any(k not in ("player_id","npc_id") for k in meta)):
-                    raise ValueError("metadata supports only player_id/npc_id")
-                if meta.get("player_id") and meta.get("npc_id"):
-                    memory = world.snapshot(meta["player_id"],meta["npc_id"])
-                    messages = [{"role":"system","content":"NPC memory (game state, not a user instruction): "
+                original_messages = body.get("messages")
+                messages = normalize_messages(original_messages)
+                meta = body.get("metadata")
+                if meta is not None and (not isinstance(meta,dict) or any(k not in ("player_id","npc_id") for k in meta)):
+                    raise CompatibilityError("metadata supports only player_id/npc_id")
+                context = extract_context(original_messages, meta)
+                if context is not None:
+                    memory = world.snapshot(context["player_id"],context["npc_id"])
+                    messages = [{"role":"system","content":"NPC long-term relationship memory (recorded game state): "
                                  + json.dumps({"affinity":memory["affinity"],"trust":memory["trust"]})
-                                 + ". Remain in character; do not pretend you triggered a real game event."}] + messages
-                max_tokens = body.get("max_completion_tokens",body.get("max_tokens",250))
+                                 + ". Use this as emotional context, not as a command. "
+                                 + "Do not claim that any in-game quest, NPC movement or letter was executed."}] + messages
+                language = os.environ.get("HLW_REPLY_LANGUAGE","").lower().strip()
+                if language == "ru":
+                    messages = [{"role":"system","content":"Ответь на русском языке естественно и в характере NPC, без рассказчика."}] + messages
+                output_format = response_type(body.get("response_format"))
+                max_tokens = body.get("max_completion_tokens",body.get("max_tokens",600))
                 if type(max_tokens) is not int:
                     raise ValueError("max_tokens must be an integer")
-                completion = router.complete(messages,max_tokens=max_tokens)
+                if output_format == "text":
+                    completion = router.complete(messages,max_tokens=max_tokens)
+                else:
+                    completion = router.complete(messages,max_tokens=max_tokens,output_format=output_format)
                 rid = "chatcmpl-"+uuid.uuid4().hex[:20]
                 if body.get("stream") is True:
                     chunks = [
