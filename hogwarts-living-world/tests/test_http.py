@@ -60,7 +60,7 @@ class ServerTests(unittest.TestCase):
 
     def test_invalid_messages_is_400(self):
         with self.assertRaises(HTTPError) as caught:
-            self.request("/v1/chat/completions",{"messages":[{"role":"tool","content":"run arbitrary command"}]})
+            self.request("/v1/chat/completions",{"messages":[{"role":"invalid_unknown_role","content":"run arbitrary command"}]})
         self.assertEqual(caught.exception.code,400)
 
     def test_no_free_provider_returns_503(self):
