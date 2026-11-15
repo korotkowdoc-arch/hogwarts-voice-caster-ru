@@ -63,4 +63,4 @@ jobs:
         if: runner.os == 'Windows'
         env:
           PYTHONPATH: src
-        run: python -c "from hogwarts_voice.ui import App; a=App(); a.update_idletasks(); a.update(); a.destroy(); print('GUI window created successfully')"
+        run: python tests/smoke_desktop.py

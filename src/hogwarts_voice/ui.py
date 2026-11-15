@@ -164,9 +164,9 @@ class App(ctk.CTk):
         hero.grid_columnconfigure(0, weight=1)
         left = ctk.CTkFrame(hero, fg_color="transparent")
         left.grid(row=0, column=0, padx=(24, 16), pady=23, sticky="w")
-        self.state = text(left, "● ГОТОВО К ЗАПУСКУ", size=11,
+        self.status_label = text(left, "● ГОТОВО К ЗАПУСКУ", size=11,
                           color=GREEN, weight="bold")
-        self.state.pack(anchor="w", pady=(0, 14))
+        self.status_label.pack(anchor="w", pady=(0, 14))
         heading(left, "Произнёс. Применил.", size=27).pack(anchor="w")
         text(left, "Без облака, ожидания тишины и проверки личности.",
              size=12, wraplength=420).pack(anchor="w", pady=(9, 16))
@@ -258,7 +258,7 @@ class App(ctk.CTk):
 
     def set_status(self, value, color=GREEN):
         if hasattr(self,"state"):
-            self.state.configure(text=value,text_color=color)
+            self.status_label.configure(text=value,text_color=color)
 
     def log(self, line):
         if not hasattr(self,"logbox"):
