@@ -1,4 +1,4 @@
-# Hogwarts Living World v0.2.0 — cloud-free-only prototype
+# Hogwarts Living World v0.3.0 — cloud-free-only prototype
 
 **This is a standalone technical prototype, not yet an installed Hogwarts Legacy mod.**
 It does not change the existing Voice Caster or any game files.
@@ -137,3 +137,30 @@ voices Kore, Puck, Charon and Aoede, without imitating the actors.
 The program allows up to 20 *new* cloud TTS requests per local day.
 Previously cached sentences don't consume the request cap.
 No paid fallback exists. Free-tier account selection is your responsibility.
+
+
+## 0.3.0 — Reliability and game connection groundwork
+
+**Tomorrow's short setup:** run setup-free.bat once to enter Gemini and/or
+Groq keys securely. Keys are encrypted with Windows DPAPI for your local
+user profile. Then double-click run.bat: no need to re-enter keys.
+Cloud speech is still disabled by default.
+
+- Automatic daily SQLite online backup on bridge restart, keeps 5 snapshots.
+- New doctor.bat creates a local diagnostic report without exposing keys.
+- Improved oversized event inbox recovery; safe repeated game event handling.
+- First deterministic cross-NPC choice:
+  secret_revealed_to_ominis changes Sebastian and Ominis relations differently,
+  and creates a *proposal* for Ominis to respond. Nothing in the game
+  changes until real game hooks are implemented and verified.
+- Optional UE4SS-OPTIONAL/HLWProbe contains an isolated Lua keybind probe.
+  Installing it is optional and not automatic. With an existing UE4SS
+  installation, Ctrl+Alt+F10 should append a non-mutating event to the inbox.
+  /health and doctor.bat report the last received probe.
+  This is NOT a working in-game quest hook.
+
+***Do not install a second copy of UE4SS.***
+The probe is not compatible-verified with the player's Sonorus build yet.
+Back up saves and Sonorus data before installation.
+
+Run tests: python -m unittest discover -s tests -v
