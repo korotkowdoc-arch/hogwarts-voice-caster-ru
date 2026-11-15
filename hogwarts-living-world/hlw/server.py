@@ -14,6 +14,7 @@ from .providers import DailyBudget, FreeRouter, NoFreeProvider
 from .world import World
 from .compat import normalize_messages, response_type, extract_context, CompatibilityError
 from .inbox import GameEventInbox
+from .speech import CloudSpeech, SpeechUnavailable
 
 def data_dir() -> Path:
     root = os.environ.get("HLW_DATA_DIR")
@@ -29,6 +30,7 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                             {"gemini": 120, "groq": 300}))
     bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
     watch_events = os.environ.get("HLW_WATCH_EVENTS", "0") == "1"
+    speech = CloudSpeech(directory) if os.environ.get("HLW_ENABLE_CLOUD_TTS", "0") == "1" else None
     inbox = GameEventInbox(directory / "game-events.jsonl",world) if watch_events else None
     if inbox:
         inbox.start()
@@ -71,7 +73,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                              "configured_providers":router.configured,"world":"ready",
                                              "sonorus":"openai_compatible_chat_completions_beta",
                                              "text_only":True,"game_hooks_installed":False,
-                                             "game_event_file_inbox":watch_events})
+                                             "game_event_file_inbox":watch_events,
+                                             "cloud_tts_preview_enabled":speech is not None})
                 if url.path == "/v1/models":
                     return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
                 if url.path == "/v1/world/outbox":
@@ -90,6 +93,18 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             try:
                 body = self._payload()
                 path = urlparse(self.path).path
+                if path == "/v1/voice/preview":
+                    if speech is None:
+                        return self._answer(404,{"error":"cloud_tts_preview_disabled"})
+                    audio=speech.synthesize(body.get("text"),body.get("voice","Kore"),
+                                             body.get("style","neutral"))
+                    self.send_response(200)
+                    self.send_header("Content-Type","audio/wav")
+                    self.send_header("Content-Length",str(len(audio)))
+                    self.send_header("Cache-Control","private, max-age=0")
+                    self.end_headers()
+                    self.wfile.write(audio)
+                    return
                 if path == "/v1/world/event":
                     result = world.apply(body["player_id"],body["npc_id"],body["event"],body["event_id"])
                     return self._answer(200,result)
@@ -138,6 +153,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 return self._answer(200,{"id":rid,"object":"chat.completion","created":int(time.time()),
                     "model":"hogwarts-living-world-free","provider":completion.provider,
                     "choices":[{"index":0,"message":{"role":"assistant","content":completion.text},"finish_reason":"stop"}]})
+            except SpeechUnavailable as exc:
+                return self._answer(503,{"error":{"type":"cloud_tts_unavailable","message":str(exc)}})
             except NoFreeProvider:
                 return self._answer(503,{"error":{"type":"free_provider_unavailable","message":
                      "No free provider response. No paid fallback. NPC and save data unchanged."}})
