@@ -11,6 +11,14 @@ try:
     app.draw_spell_settings()
     app.update()
     assert app._active_page == "spells"
+    assert app.voice_style_menu is not None
+    app.set_voice_style("Росмэн / книжный стиль")
+    assert app.config_data["voice_style"] == "rosmen"
+    assert "Остолбеней" in app.spell_controls["Stupefy"].cget("text")
+    app.set_voice_style("Оригинальные формулы")
+    assert app.config_data["voice_style"] == "original"
+    assert "Ступефай" in app.spell_controls["Stupefy"].cget("text")
+    app.set_voice_style("Росмэн / книжный стиль")
     assert len(app.spell_vars) >= 25
     app.spell_vars["Depulso"].set(True)
     app.update_enabled_spells()
@@ -21,6 +29,7 @@ try:
     assert len(app.config_data["enabled_spells"]) == len(app.spell_vars)
     # Tests should never leave a modified Git working tree behind.
     app.config_data["enabled_spells"] = ["Lumos", "Accio"]
+    app.config_data["voice_style"] = "rosmen"
     app.save_config()
     app.draw_home()
     app.update()

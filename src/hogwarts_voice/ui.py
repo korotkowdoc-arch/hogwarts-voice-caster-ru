@@ -15,6 +15,7 @@ import customtkinter as ctk
 from PIL import Image
 from tkinter import filedialog, messagebox
 from .spell_meta import READINGS, palette_of
+from .voice_presets import DEFAULT_STYLE, STYLE_LABELS, visible_name
 from .icon_assets import SOURCE_PAGE, count_icons, has_icon, icon_file, import_zip
 from .spellbook import Spellbook
 from .voice_profile import VoiceProfile
@@ -132,7 +133,7 @@ class App(ctk.CTk):
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v1.0.1", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v1.1", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -176,9 +177,26 @@ class App(ctk.CTk):
              color=GOLD, weight="bold").pack(anchor="w", pady=(0,6))
         heading(wrapper, "Какие заклинания разрешены?", size=28).pack(anchor="w")
         text(wrapper,
-             "При проверке микрофона распознаются все заклинания. "
-             "Здесь ты выбираешь, какие разрешено применять в игре.",
-             size=12, wraplength=750).pack(anchor="w", pady=(10,16))
+             "Выбери книжное или оригинальное произношение. "
+             "В проверке микрофона доступны все команды; "
+             "ниже выбирается, что можно применять в игре.",
+             size=12, wraplength=750).pack(anchor="w", pady=(10,12))
+        style_row = ctk.CTkFrame(wrapper, fg_color="transparent")
+        style_row.pack(fill="x", pady=(0,13))
+        text(style_row, "ПРОИЗНОШЕНИЕ", size=11, color=GOLD,
+             weight="bold").pack(side="left", padx=(0,14))
+        self.voice_style_menu = ctk.CTkOptionMenu(
+            style_row, values=list(STYLE_LABELS.values()),
+            command=self.set_voice_style,
+            fg_color=RAISED, button_color="#2b4055",
+            button_hover_color="#3d5670",
+            text_color=TEXT, height=39,
+            font=ctk.CTkFont(family=FONT, size=12),
+        )
+        self.voice_style_menu.pack(side="left", padx=(0,10))
+        self.voice_style_menu.set(STYLE_LABELS.get(
+            self.config_data.get("voice_style", DEFAULT_STYLE),
+            STYLE_LABELS[DEFAULT_STYLE]))
         self.enabled_count = text(wrapper, "", size=12, color=GREEN)
         self.enabled_count.pack(anchor="w", pady=(0,12))
 
@@ -190,9 +208,11 @@ class App(ctk.CTk):
         scroll.grid_columnconfigure(0, weight=1)
         scroll.grid_columnconfigure(1, weight=1)
         enabled = set(self.config_data.get("enabled_spells", ["Lumos", "Accio"]))
+        style = self.config_data.get("voice_style", DEFAULT_STYLE)
         self.spell_vars = {}
+        self.spell_controls = {}
         for index, spell in enumerate(self.book.entries):
-            reading = READINGS.get(spell, (spell, spell))[0]
+            reading = visible_name(spell, style)
             variable = ctk.BooleanVar(value=spell in enabled)
             self.spell_vars[spell] = variable
             control = ctk.CTkCheckBox(
@@ -204,6 +224,7 @@ class App(ctk.CTk):
             )
             control.grid(row=index // 2, column=index % 2, sticky="w",
                          padx=18, pady=10)
+            self.spell_controls[spell] = control
 
         actions = ctk.CTkFrame(wrapper, fg_color="transparent")
         actions.pack(fill="x", pady=(0,6))
@@ -214,6 +235,18 @@ class App(ctk.CTk):
         button(actions, "Вернуться на главную", self.draw_home,
                height=38, width=190).pack(side="right")
         self.update_spell_count()
+
+    def set_voice_style(self, label):
+        style = next((key for key, name in STYLE_LABELS.items()
+                      if name == label), None)
+        if style is None:
+            return
+        self.config_data["voice_style"] = style
+        self.save_config()
+        for spell, control in self.spell_controls.items():
+            control.configure(text=f"{visible_name(spell, style)}  —  {spell}")
+        self.log(f"[style] {STYLE_LABELS[style]}. Для применения "
+                 "останови и снова запусти распознавание.")
 
     def update_spell_count(self):
         selected = [spell for spell, state in self.spell_vars.items()
@@ -267,8 +300,12 @@ class App(ctk.CTk):
                           color=GREEN, weight="bold")
         self.status_label.pack(anchor="w", pady=(0, 14))
         heading(left, "Произнёс. Применил.", size=27).pack(anchor="w")
+        text(left, "Произношение: " + STYLE_LABELS.get(
+            self.config_data.get("voice_style", DEFAULT_STYLE),
+            STYLE_LABELS[DEFAULT_STYLE]),
+            size=12, wraplength=420, color=GOLD).pack(anchor="w", pady=(6,0))
         text(left, "Без облака, ожидания тишины и проверки личности.",
-             size=12, wraplength=420).pack(anchor="w", pady=(9, 16))
+             size=12, wraplength=420).pack(anchor="w", pady=(5,14))
         self.primary = button(left, "НАЧАТЬ КОЛДОВАТЬ", lambda: self.start(False),
                               primary=True, width=270, height=51)
         self.primary.pack(anchor="w")
@@ -473,6 +510,9 @@ class App(ctk.CTk):
         self.log("Запуск проверки микрофона..." if dry_run else "Запуск игрового распознавания...")
         if self.config_data.get("recognition_engine", "gigaam_ru") == "gigaam_ru":
             self.log("[engine] Русская нейросеть GigaAM v2. Обучение голосу не требуется.")
+            self.log("[style] " + STYLE_LABELS.get(
+                self.config_data.get("voice_style", DEFAULT_STYLE),
+                STYLE_LABELS[DEFAULT_STYLE]))
             if dry_run:
                 self.log("[engine] Проверка распознаёт все заклинания, но ничего не применяет.")
             else:
@@ -665,8 +705,9 @@ class Wizard:
         area.pack(fill="both",expand=True)
         self.icon_widget=picture(area,spell,size=212)
         self.icon_widget.pack(fill="both",expand=True,padx=30,pady=30)
-        ru,phon=READINGS.get(spell,(spell,spell))
-        self.ru.configure(text=ru)
+        _,phon=READINGS.get(spell,(spell,spell))
+        self.ru.configure(text=visible_name(
+            spell, self.app.config_data.get("voice_style", DEFAULT_STYLE)))
         self.english.configure(text=spell)
         self.phonetic.configure(text=f"Английская транскрипция: {phon}")
         self.number.configure(text=f"ЗАКЛИНАНИЕ {self.index+1:02d} / {len(self.spells)}")
