@@ -13,6 +13,10 @@ EVENTS = {
     "player_ignored": (-5, -3),
     "apology_accepted": (7, 12),
     "gift_given": (5, 3),
+    "meeting_accepted": (4, 2),
+    "meeting_declined": (-3, -1),
+    "meeting_attended": (12, 8),
+    "meeting_missed": (-10, -8),
 }
 
 def safe_id(value: str) -> str:
@@ -39,6 +43,9 @@ class World:
                     player TEXT NOT NULL, event_id TEXT NOT NULL,
                     npc TEXT NOT NULL, kind TEXT NOT NULL,
                     PRIMARY KEY(player,event_id));
+                CREATE TABLE IF NOT EXISTS milestones (
+                    player TEXT NOT NULL, npc TEXT NOT NULL, milestone TEXT NOT NULL,
+                    PRIMARY KEY(player,npc,milestone));
                 CREATE TABLE IF NOT EXISTS outbox (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     player TEXT NOT NULL, npc TEXT NOT NULL, kind TEXT NOT NULL,
@@ -86,6 +93,22 @@ class World:
                     self._enqueue(player,npc,"npc_note",{"reason":"unresolved_refusal","tone":"cold"},now)
                 elif kind == "player_helped" and affinity >= 12:
                     self._enqueue(player,npc,"npc_note",{"reason":"gratitude","tone":"warm"},now)
+                # Deterministic story milestone, once per save & NPC, never directly a game action.
+                if npc in ("sebastian","ominis","poppy") and affinity >= 24 and trust >= 16:
+                    inserted = self.db.execute(
+                        "INSERT OR IGNORE INTO milestones(player,npc,milestone) VALUES(?,?,?)",
+                        (player,npc,"first_invitation"))
+                    if inserted.rowcount:
+                        self._enqueue(player,npc,"owl_letter_proposal",{
+                            "story":"first_invitation",
+                            "summary":"The NPC would like to meet the player.",
+                            "requires_game_adapter":True},now)
+                if kind == "meeting_accepted":
+                    location = {"sebastian":"Undercroft","ominis":"Hogwarts courtyard",
+                                "poppy":"Beasts classroom"}.get(npc)
+                    if location:
+                        self._enqueue(player,npc,"meeting_proposal",{
+                            "location":location,"requires_game_adapter":True},now)
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
