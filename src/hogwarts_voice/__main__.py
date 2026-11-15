@@ -18,6 +18,7 @@ from typing import Any
 
 from .bridge import SpellBridge
 from .latency import AudioDelayMeter
+from .template_voice import PronunciationBank, SpeechSegmenter
 from .model_storage import installed_model_path, model_layout_ok, migrate_legacy
 from .spellbook import Spellbook
 from .stream import StreamGate
@@ -122,6 +123,13 @@ def main():
         spellbook, cfg.get("stable_partial_updates", 1),
         cfg.get("min_gap_ms", 0), cfg.get("repeat_gap_ms", 450)
     )
+    bank = PronunciationBank.load()
+    trained_spells = bank.trained_spells()
+    # Listening without samples is unchanged. With samples, hold dubious Vosk
+    # guesses until the live acoustic matcher has examined that phrase.
+    segmenter = SpeechSegmenter(silence_ms=100) if trained_spells else None
+    pending_vosk = []
+    print(f"Pronunciation templates: {len(trained_spells)} trained spell(s)", flush=True)
     verify_speaker = bool(cfg.get("speaker_verification", False))
     verifier = None
     worker = None
@@ -223,6 +231,9 @@ def main():
                     meter.reset()
                     history.clear()
                     pending.clear()
+                    pending_vosk.clear()
+                    if segmenter:
+                        segmenter.reset()
                     session += 1
 
                 if bridge and now - last_heartbeat >= 0.16:
@@ -245,6 +256,9 @@ def main():
                     meter.reset()
                     history.clear()
                     pending.clear()
+                    pending_vosk.clear()
+                    if segmenter:
+                        segmenter.reset()
                     session += 1
                     while True:
                         try:
@@ -281,6 +295,7 @@ def main():
                     continue
 
                 onset = meter.observe(chunk, captured_at)
+                completed_phrase = segmenter.feed(chunk) if segmenter else None
                 if verifier:
                     history.append(chunk)
 
@@ -301,8 +316,36 @@ def main():
                 if spells:
                     if verifier:
                         pending.extend(spells)
+                    elif segmenter:
+                        pending_vosk.extend(spells)
                     else:
                         emit(spells, capture_at=captured_at, speech_onset=onset)
+
+                if completed_phrase is not None and not verifier:
+                    try:
+                        selected, score, reason = bank.match(
+                            completed_phrase,
+                            threshold=float(cfg.get("template_threshold", 0.78)),
+                            margin=float(cfg.get("template_margin", 0.055))
+                        )
+                    except ValueError as exc:
+                        selected, score, reason = None, 0.0, str(exc)
+                    if selected:
+                        print(f"[trained] {selected}: similarity={score:.3f}", flush=True)
+                        emit([selected], capture_at=captured_at, speech_onset=onset)
+                    else:
+                        # Only untrained spells use speculative Vosk output.
+                        # Never replace an already-trained word with a Vosk guess
+                        # after template mismatch (reduces dangerous miscasts).
+                        remaining = [sp for sp in pending_vosk if sp not in trained_spells]
+                        if remaining:
+                            if verbose or args.dry_run:
+                                print(f"[trained] No match ({reason}, {score:.3f}); "
+                                      f"Vosk fallback: {remaining}", flush=True)
+                            emit(remaining[:1], capture_at=captured_at, speech_onset=onset)
+                        elif verbose or args.dry_run:
+                            print(f"[trained] No confident match: {reason} ({score:.3f})", flush=True)
+                    pending_vosk.clear()
 
                 if verifier and pending:
                     wav = b"".join(history)
@@ -326,6 +369,8 @@ def main():
                 if is_final:
                     history.clear()
                     pending.clear()
+                    if not segmenter:
+                        pending_vosk.clear()
                     last_partial = ""
                     meter.reset()
 

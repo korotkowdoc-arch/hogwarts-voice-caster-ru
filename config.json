@@ -12,5 +12,7 @@
   "speaker_verification": false,
   "speaker_threshold": 0.68,
   "debug_latency": true,
-  "performance_mode": "fast"
+  "performance_mode": "fast",
+  "template_threshold": 0.78,
+  "template_margin": 0.055
 }

@@ -17,6 +17,7 @@ from .spell_meta import READINGS, palette_of
 from .icon_assets import SOURCE_PAGE, count_icons, has_icon, icon_file, import_zip
 from .spellbook import Spellbook
 from .voice_profile import VoiceProfile
+from .template_voice import PronunciationBank
 from .__main__ import ROOT, MODEL, DEFAULT_CONFIG, DEFAULT_SPELLS
 
 ctk.set_appearance_mode("dark")
@@ -383,13 +384,13 @@ class Wizard:
         self.app = app
         self.spells = list(app.book.entries)
         self.index = 0
-        self.counts = {}
+        self.bank = PronunciationBank.load()
         self.last_heard = ""
         self.busy = False
         self.model = None
         self.events = queue.Queue()
         self.win = ctk.CTkToplevel(app)
-        self.win.title("Тренировка заклинаний — Hogwarts Voice Caster")
+        self.win.title("Обучение звучанию заклинаний — Hogwarts Voice Caster")
         self.win.geometry("1010x700")
         self.win.minsize(850,620)
         self.win.configure(fg_color=BASE)
@@ -428,9 +429,9 @@ class Wizard:
         self.progress=ctk.CTkProgressBar(right,progress_color=GOLD,
                                          fg_color="#2a3548",height=6)
         self.progress.pack(fill="x",padx=pad,pady=(3,20))
-        self.record=button(right,"ЗАПИСАТЬ ПРОИЗНОШЕНИЕ",self.record_click,primary=True)
+        self.record=button(right,"ЗАПИСАТЬ ОБРАЗЕЦ ГОЛОСА",self.record_click,primary=True)
         self.record.pack(fill="x",padx=pad,pady=(0,12))
-        self.notice=text(right,"Три попытки по желанию. Сначала нажми кнопку.",
+        self.notice=text(right,"Запиши заклинание три раза. Vosk не обязан угадать текст.",
                          size=12,wraplength=360)
         self.notice.pack(anchor="w",padx=pad,pady=(0,12))
         self.heard=text(right,"РАСПОЗНАНО: —",size=13,color=TEXT,wraplength=360)
@@ -471,8 +472,8 @@ class Wizard:
         self.phonetic.configure(text=f"Английская транскрипция: {phon}")
         self.number.configure(text=f"ЗАКЛИНАНИЕ {self.index+1:02d} / {len(self.spells)}")
         self.progress.set((self.index+1)/len(self.spells))
-        self.notice.configure(text=f"Попыток: {self.counts.get(spell,0)} / 3 · запись 2,8 сек.",
-                              text_color=MUTED)
+        self.notice.configure(text=f"Образцов: {min(self.bank.count(spell),3)} / 3 · запись 2,8 сек.",
+                              text_color=GREEN if self.bank.trained(spell) else MUTED)
         self.heard.configure(text="РАСПОЗНАНО: —")
         self.last_heard=""
         self.accept.configure(state="disabled")
@@ -523,7 +524,11 @@ class Wizard:
             asr=KaldiRecognizer(self.model,16000,grammar)
             asr.AcceptWaveform(pcm)
             result=json.loads(asr.FinalResult()).get("text","").strip()
-            self.events.put(("result",spell,result))
+            # Training is acoustic: the user pressed Record on THIS spell.
+            # Store its sound features even if general-purpose Vosk fails.
+            count = self.bank.add(spell, pcm)
+            self.bank.save()
+            self.events.put(("result", spell, (result, count)))
         except Exception as exc:
             self.events.put(("error",spell,str(exc)))
 
@@ -541,12 +546,19 @@ class Wizard:
                     self.notice.configure(text=f"Ошибка записи: {value}",text_color=RED)
                 elif kind=="result":
                     self.busy=False
-                    self.counts[spell]=self.counts.get(spell,0)+1
+                    heard, count = value
                     self.record.configure(state="normal")
-                    self.notice.configure(text=f"Попыток: {self.counts[spell]} / 3",text_color=GREEN)
-                    self.last_heard=value
-                    self.heard.configure(text="РАСПОЗНАНО: "+(value or "не разобрано"))
-                    self.accept.configure(state="normal" if value else "disabled")
+                    ready = self.bank.trained(spell)
+                    self.notice.configure(
+                        text=(f"Образцов: {min(count,3)} / 3 · "
+                              + ("Обучено ✓" if ready else "повтори произношение")),
+                        text_color=GREEN if ready else GOLD
+                    )
+                    self.last_heard=heard
+                    self.heard.configure(
+                        text="Vosk услышал: "+(heard or "не разобрано")
+                             + " · на сохранение образца это не влияет")
+                    self.accept.configure(state="normal" if heard else "disabled")
         except queue.Empty:
             pass
         self.win.after(120,self.pump)

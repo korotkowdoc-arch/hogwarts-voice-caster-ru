@@ -33,7 +33,7 @@ DEFAULT_SPELLS: dict[str, list[str]] = {
     "Imperius": ["империо", "империус"],
     "AvadaKedavra": ["авада кедавра"],
     "Finisher": ["древняя магия"],
-    "AppareVestigium": ["путь к цели"],
+    "AppareVestigium": ["аппаре вестигиум"],
 }
 
 _WORDS = re.compile(r"[^\w\s]+", re.UNICODE)
