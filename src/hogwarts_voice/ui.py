@@ -932,6 +932,12 @@ class App(ctk.CTk):
                         self.set_status("● ЗАКЛИНАНИЕ ПРИМЕНЕНО (ПО ЖУРНАЛУ МОДА)", GREEN)
                     elif "[game:failed]" in str(value):
                         self.set_status("● МОД НЕ ПРИМЕНИЛ ЗАКЛИНАНИЕ", RED)
+                    elif "[game:unverified]" in str(value):
+                        self.set_status("● НЕТ ПОДТВЕРЖДЕНИЯ ОТ ИГРЫ", GOLD)
+                    elif "[game:busy]" in str(value):
+                        self.set_status("● ПАЛОЧКА ЗАНЯТА, МОД ПОВТОРИТ", GOLD)
+                    elif "[interact]" in str(value):
+                        self.set_status("● ВЗАИМОДЕЙСТВИЕ ОТПРАВЛЕНО", GOLD)
                     elif "[sent]" in str(value):
                         self.set_status("● ОТПРАВЛЕНО В ИГРУ (ОЖИДАНИЕ ОТВЕТА)", GOLD)
                     elif "[TEST]" in str(value):
