@@ -10,6 +10,11 @@ try:
     app.set_status("Smoke test")
     assert app.overlay is not None
     assert not app.overlay.enabled
+    app.draw_performance_settings()
+    app.update()
+    assert app._active_page == "performance"
+    assert app.engine_menu is not None
+    assert app.predecode_switch is not None
     app.draw_silence_settings()
     app.update()
     assert app._active_page == "silence"

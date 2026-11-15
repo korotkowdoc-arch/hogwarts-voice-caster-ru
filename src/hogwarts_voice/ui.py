@@ -6,6 +6,8 @@ from collections import deque
 import os
 from pathlib import Path
 import queue
+import re
+import statistics
 import subprocess
 import sys
 import threading
@@ -17,6 +19,10 @@ from tkinter import filedialog, messagebox
 from .spell_meta import READINGS, palette_of
 from .voice_presets import DEFAULT_STYLE, STYLE_LABELS, visible_name
 from .game_overlay import GameOverlay
+from .ru_asr import TRANSDUCER_FILES, transducer_directory
+from .transducer_install import install_transducer
+from .update_client import check_update, stage_update, launch_installer
+from . import __version__
 from .silence_mod import (
     OFFICIAL_NONVERBAL_PAGE, OFFICIAL_AUTO_ALOHOMORA_PAGE,
     install_nonverbal, set_nonverbal_enabled, nonverbal_status,
@@ -112,6 +118,9 @@ class App(ctk.CTk):
         self._log_history = deque(maxlen=200)
         self._closed = False
         self._proc_generation = 0
+        self._measurements = deque(maxlen=50)
+        self._update_in_progress = False
+        self._model_installing = False
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
@@ -143,12 +152,17 @@ class App(ctk.CTk):
             fill="x", padx=17, pady=5)
         button(s, "Тихие заклинания / Алохомора",
                self.draw_silence_settings).pack(fill="x", padx=17, pady=5)
-        button(s, "Импорт игровых иконок", self.import_icons).pack(fill="x", padx=17, pady=5)
+        button(s, "Скорость и движок", self.draw_performance_settings
+               ).pack(fill="x", padx=17, pady=5)
+        button(s, "Проверить обновление", self.check_for_updates
+               ).pack(fill="x", padx=17, pady=5)
+        button(s, "Импорт игровых иконок", self.import_icons
+               ).pack(fill="x", padx=17, pady=5)
         button(s, "Источник иконок", lambda: webbrowser.open(SOURCE_PAGE)).pack(fill="x", padx=17, pady=5)
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v1.2", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v1.3", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -169,6 +183,149 @@ class App(ctk.CTk):
             json.dumps(self.config_data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8"
         )
+
+    def draw_performance_settings(self):
+        if self.wizard is not None and self.wizard.win.winfo_exists():
+            if self.wizard.busy:
+                return
+            self.wizard = None
+        self.clear_content()
+        self._active_page="performance"
+        area=ctk.CTkScrollableFrame(self.content,fg_color="transparent")
+        area.pack(fill="both",expand=True,padx=30,pady=22)
+        heading(area,"Скорость и распознавание",size=29).pack(anchor="w",pady=(0,10))
+        text(area,"Стабильная нейросеть остаётся основным вариантом. "
+             "GigaAM Transducer можно установить отдельно и сравнить "
+             "по реальным замерам. Дополнительная модель занимает ~231 МБ.",
+             wraplength=720,size=12).pack(anchor="w",pady=(0,12))
+        text(area,"ДВИЖОК",size=11,color=GOLD,weight="bold").pack(anchor="w")
+        options=["GigaAM CTC — проверенный","GigaAM Transducer — эксперимент"]
+        self.engine_menu=ctk.CTkOptionMenu(
+            area,values=options,command=self.set_asr_backend,
+            fg_color=RAISED,button_color="#2b4055",
+            button_hover_color="#3d5670",text_color=TEXT,
+            width=390,height=40,
+        )
+        self.engine_menu.pack(anchor="w",pady=(7,13))
+        self.engine_menu.set(options[1] if self.config_data.get(
+            "asr_backend","ctc")=="transducer" else options[0])
+        self.transducer_status=text(area,"",size=12,color=MUTED)
+        self.transducer_status.pack(anchor="w",pady=(0,7))
+        self.refresh_transducer_status()
+        button(area,"УСТАНОВИТЬ ЭКСПЕРИМЕНТАЛЬНУЮ МОДЕЛЬ",
+               self.install_experimental_model,width=430,height=39
+               ).pack(anchor="w",pady=(0,20))
+        self.predecode_switch=ctk.CTkSwitch(
+            area,text="Начинать распознавание ещё при удержании Mouse5",
+            command=self.set_early_decode,
+            fg_color="#455269",progress_color=GOLD,button_color=TEXT,
+            text_color=TEXT,font=ctk.CTkFont(family=FONT,size=12),
+        )
+        self.predecode_switch.pack(anchor="w",pady=(0,10))
+        if self.config_data.get("early_decode",True):
+            self.predecode_switch.select()
+        else:
+            self.predecode_switch.deselect()
+        text(area,"Это безопасная оптимизация: модель начинает распознавать "
+             "после окончания слова, если Mouse5 ещё зажата. "
+             "Заклинание применяется ТОЛЬКО после отпускания. "
+             "При продолжении речи результат пересчитывается полностью.",
+             size=12,wraplength=720).pack(anchor="w",pady=(0,17))
+        heading(area,"Замеры на этом компьютере",size=22).pack(anchor="w",pady=(0,10))
+        self.performance_stats=text(area,"",size=13,color=GREEN)
+        self.performance_stats.pack(anchor="w",pady=(0,9))
+        self.refresh_performance_stats()
+        text(area,"Время от отпускания Mouse5 до результата, отдельно "
+             "длительность работы нейросети. До первых попыток статистики нет. "
+             "Переключение движка применяется после перезапуска прослушивания.",
+             size=12,wraplength=720).pack(anchor="w",pady=(0,18))
+        button(area,"НАЗАД НА ГЛАВНУЮ",self.draw_home,
+               width=250,height=39).pack(anchor="w")
+
+    def refresh_transducer_status(self):
+        folder=transducer_directory()
+        good=all((folder/name).is_file() for name in TRANSDUCER_FILES)
+        if hasattr(self,"transducer_status") and self._active_page=="performance":
+            self.transducer_status.configure(text=(
+                "Дополнительная модель: установлена" if good
+                else "Дополнительная модель: пока не установлена"
+            ),text_color=GREEN if good else MUTED)
+        return good
+
+    def set_asr_backend(self,label):
+        experimental="эксперимент" in label.casefold()
+        if experimental and not self.refresh_transducer_status():
+            messagebox.showwarning(
+                "Модель не установлена",
+                "Сначала нажми «УСТАНОВИТЬ ЭКСПЕРИМЕНТАЛЬНУЮ МОДЕЛЬ».",
+                parent=self,
+            )
+            self.engine_menu.set("GigaAM CTC — проверенный")
+            return
+        self.config_data["asr_backend"]="transducer" if experimental else "ctc"
+        self.save_config()
+        self.log("[engine] Настройка сохранена; перезапусти прослушивание.")
+
+    def set_early_decode(self):
+        self.config_data["early_decode"]=bool(self.predecode_switch.get())
+        self.save_config()
+        self.log("[latency] Режим предварительного распознавания обновлён. "
+                 "Перезапусти прослушивание.")
+
+    def refresh_performance_stats(self):
+        if not hasattr(self,"performance_stats") or self._active_page!="performance":
+            return
+        if not self._measurements:
+            self.performance_stats.configure(text="Пока нет измерений")
+            return
+        after=[a for a,_ in self._measurements]
+        model=[b for _,b in self._measurements]
+        self.performance_stats.configure(text=(
+            f"Попыток: {len(after)}  ·  "
+            f"После отпускания: медиана {statistics.median(after):.0f} мс  ·  "
+            f"GigaAM: медиана {statistics.median(model):.0f} мс"))
+
+    def check_for_updates(self):
+        if self._update_in_progress:
+            self.log("[update] Обновление уже проверяется или загружается.")
+            return
+        self._update_in_progress=True
+        self.log("[update] Проверяем официальную ветку GitHub...")
+        def job():
+            try:
+                result=check_update(__version__)
+                self.events.put(("update_found",-1,result))
+            except Exception as exc:
+                self.events.put(("update_error",-1,str(exc)))
+        threading.Thread(target=job,daemon=True).start()
+
+    def download_update(self,update):
+        self.log(f"[update] Загружаем версию {update.version} с проверенного "
+                 "коммита GitHub...")
+        def job():
+            try:
+                stage=stage_update(update,ROOT)
+                self.events.put(("update_staged",-1,stage))
+            except Exception as exc:
+                self.events.put(("update_error",-1,str(exc)))
+        threading.Thread(target=job,daemon=True).start()
+
+    def install_experimental_model(self):
+        if self._model_installing:
+            self.log("[model] Модель уже загружается.")
+            return
+        self._model_installing=True
+        self.log("[model] Установка GigaAM Transducer (~231 MB), без смены "
+                 "основного движка...")
+        def job():
+            try:
+                install_transducer(
+                    report=lambda message:self.events.put(
+                        ("model_progress",-1,message)))
+                self.events.put(("model_done",-1,None))
+            except Exception as exc:
+                self.events.put(("model_error",-1,str(exc)))
+        threading.Thread(target=job,daemon=True).start()
 
     def draw_silence_settings(self):
         """Silence spell voice lines using the user-supplied optional PAK."""
@@ -719,10 +876,56 @@ class App(ctk.CTk):
         try:
             while True:
                 kind, generation, value = self.events.get_nowait()
-                if generation != self._proc_generation:
+                if generation not in (-1,self._proc_generation):
                     continue
-                if kind == "log":
+                if kind == "update_found":
+                    if value is None:
+                        self._update_in_progress=False
+                        messagebox.showinfo("Программа обновлена",
+                                            f"Установлена актуальная версия {__version__}.",
+                                            parent=self)
+                    elif messagebox.askyesno(
+                        "Есть обновление",
+                        f"Версия {__version__} → {value.version}.\n"
+                        "Скачать, сохранить настройки, перезапустить приложение? "
+                        "Можно отменить до установки.",
+                        parent=self):
+                        self.download_update(value)
+                    else:
+                        self._update_in_progress=False
+                elif kind == "update_staged":
+                    self._update_in_progress=False
+                    try:
+                        launch_installer(value,ROOT)
+                    except (OSError,ValueError) as exc:
+                        messagebox.showerror("Обновление",str(exc),parent=self)
+                    else:
+                        self.close()
+                elif kind == "update_error":
+                    self._update_in_progress=False
+                    messagebox.showerror("Не удалось обновить",str(value),parent=self)
+                elif kind == "model_progress":
                     self.log(str(value))
+                elif kind == "model_done":
+                    self._model_installing=False
+                    self.refresh_transducer_status()
+                    messagebox.showinfo("Модель установлена",
+                                        "Можно выбрать GigaAM Transducer "
+                                        "в разделе «Скорость и движок».",
+                                        parent=self)
+                elif kind == "model_error":
+                    self._model_installing=False
+                    messagebox.showerror("Ошибка установки модели",
+                                         str(value),parent=self)
+                elif kind == "log":
+                    self.log(str(value))
+                    metric=re.search(
+                        r"\[latency\] inference=(\d+)ms after-release=(\d+)ms",
+                        str(value))
+                    if metric:
+                        self._measurements.append((
+                            int(metric.group(2)),int(metric.group(1))))
+                        self.refresh_performance_stats()
                     if hasattr(self,"overlay"):
                         self.overlay.show(str(value))
                     if "[game:cast]" in str(value):

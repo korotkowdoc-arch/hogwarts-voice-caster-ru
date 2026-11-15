@@ -29,5 +29,7 @@
   "asr_threads": 4,
   "voice_style": "rosmen",
   "interaction_key": "F",
-  "overlay_enabled": false
+  "overlay_enabled": false,
+  "asr_backend": "ctc",
+  "early_decode": true
 }
