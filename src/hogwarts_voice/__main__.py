@@ -18,12 +18,13 @@ from typing import Any
 
 from .bridge import SpellBridge
 from .latency import AudioDelayMeter
+from .model_storage import installed_model_path, model_layout_ok, migrate_legacy
 from .spellbook import Spellbook
 from .stream import StreamGate
 from .windows import KeyboardState, VK_F9, down, game_focused
 
 ROOT = Path(__file__).resolve().parents[2]
-MODEL = ROOT / "models" / "vosk-model-small-ru-0.22"
+MODEL = installed_model_path(ROOT)
 DEFAULT_CONFIG = ROOT / "config.json"
 DEFAULT_SPELLS = ROOT / "spells.json"
 
@@ -90,8 +91,10 @@ def main():
         profile = VoiceProfile.load()
         with args.spells.open("r", encoding="utf-8") as f:
             spellbook = profile.merged_book(Spellbook(json.load(f)))
-        if not args.model.is_dir():
-            raise FileNotFoundError(f"Model not found: {args.model}. Run install.bat")
+        if args.model == MODEL and not model_layout_ok(MODEL):
+            migrate_legacy(ROOT, MODEL)
+        if not model_layout_ok(args.model):
+            raise FileNotFoundError(f"Model not found or incomplete: {args.model}. Run install.bat again.")
     except (ImportError, OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
         print(f"Startup error: {exc}", file=sys.stderr)
         return 2
@@ -99,7 +102,14 @@ def main():
     # Instantiate the model ONCE; no cloud round trip, no per-command loading.
     SetLogLevel(-1)
     print("Loading Russian offline model...", flush=True)
-    model = Model(str(args.model))
+    try:
+        model = Model(str(args.model))
+    except Exception as exc:
+        print(f"[MODEL ERROR] Vosk cannot load the model at: {args.model}", file=sys.stderr, flush=True)
+        print(f"Details: {exc}. Run the updated install.bat to verify and repair the model.", file=sys.stderr, flush=True)
+        if sys.platform == "win32" and not str(args.model).isascii():
+            print("The model path contains non-English characters, unsupported by some Windows Vosk builds.", file=sys.stderr, flush=True)
+        return 2
     grammar_mode = cfg.get("grammar_mode", "constrained")
     if grammar_mode == "constrained":
         recognizer = KaldiRecognizer(model, 16000, json.dumps(spellbook.grammar(), ensure_ascii=False))

@@ -507,7 +507,7 @@ class Wizard:
             from vosk import Model, KaldiRecognizer, SetLogLevel
             if self.model is None:
                 if not MODEL.is_dir():
-                    raise FileNotFoundError("Модель Vosk не установлена. Запусти install.bat.")
+                    raise FileNotFoundError("Русская модель Vosk не найдена. Повторно запусти install.bat для проверки и переноса.")
                 SetLogLevel(-1)
                 self.model=Model(str(MODEL))
             self.events.put(("recording",spell,None))
