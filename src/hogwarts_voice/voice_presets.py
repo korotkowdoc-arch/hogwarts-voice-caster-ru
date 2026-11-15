@@ -46,6 +46,11 @@ ROSMEN_READINGS = {
     "AvadaKedavra": "Авада Кедавра",
     "Finisher": "Древняя магия",
     "AppareVestigium": "Покажи путь",
+    "Alohomora": "Алохомора",
+    "Finite": "Фините",
+    "Broomstick": "Акцио метла",
+    "Map": "Открой карту",
+    "Inventory": "Открой инвентарь",
 }
 
 # These ordinary expressions only work in the book-inspired mode; they are

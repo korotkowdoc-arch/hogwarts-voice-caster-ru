@@ -17,6 +17,7 @@ from .vad import AdaptiveSpeechSegmenter
 from .windows import KeyboardState, down, game_focused, foreground_process_name
 from .voice_presets import DEFAULT_STYLE, validate_style, STYLE_LABELS
 from .game_commands import to_game_command
+from .game_interactions import ACTION_IDS, interact_with_lock, validate_interact_key
 
 def run(args, cfg):
     try:
@@ -69,7 +70,17 @@ def run(args, cfg):
     except ValueError as exc:
         print(f"[setup] {exc}", flush=True)
         return 2
-    frames = int(16000 * int(cfg.get("block_ms", 20)) / 1000)
+    # Existing installs saved fast=20ms before v1.2; promote this to
+    # 10ms automatically without forcing config.json replacement.
+    configured_block = int(cfg.get("block_ms", 20))
+    block_ms = (10 if cfg.get("performance_mode", "fast") == "fast"
+                and configured_block == 20 else configured_block)
+    frames = int(16000 * block_ms / 1000)
+    try:
+        interact_key = validate_interact_key(cfg.get("interaction_key", "F"))
+    except ValueError as exc:
+        print(f"[setup] {exc}", flush=True)
+        return 2
     focus_required = not dry_run and cfg.get("require_game_focus", True)
     recorder = PushToTalkCapture()
     segmenter = AdaptiveSpeechSegmenter(silence_ms=170, min_speech_ms=170)
@@ -144,6 +155,10 @@ def run(args, cfg):
               flush=True)
         print("[help] F8 toggles pause. Return to Hogwarts Legacy to cast in GAME mode.",
               flush=True)
+        print(f"[perf] mic block={block_ms}ms, CPU threads="
+              f"{cfg.get('asr_threads', 4)}; model stays loaded", flush=True)
+        print(f"[actions] Alohomora interacts with nearby lock using {interact_key}. "
+              "A lock minigame may still appear.", flush=True)
         with sd.RawInputStream(
             samplerate=16000, blocksize=frames, channels=1, dtype="int16",
             device=mic, callback=on_audio
@@ -240,6 +255,23 @@ def run(args, cfg):
                         continue
                     if focus_required and not game_focused():
                         print(f"[blocked] {spell}: game lost focus", flush=True)
+                        continue
+                    if spell in ACTION_IDS:
+                        game_command = f"interact:{interact_key}"
+                        if dry_run:
+                            ok, result = True, "TEST"
+                        else:
+                            ok, result = interact_with_lock(key=interact_key)
+                        if ok:
+                            last_sent_spell, last_sent_at = spell, now
+                        print(f"[{result}] {spell} -> {game_command} | "
+                              f"release-to-action="
+                              f"{(time.monotonic()-released)*1000:.0f}ms",
+                              flush=True)
+                        if ok and not dry_run:
+                            print("[action] Interaction key pressed. Only a nearby "
+                                  "locked door/chest can start Alohomora; "
+                                  "the puzzle is not bypassed.", flush=True)
                         continue
                     try:
                         game_command = to_game_command(spell)

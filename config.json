@@ -1,6 +1,6 @@
 {
   "samplerate": 16000,
-  "block_ms": 20,
+  "block_ms": 10,
   "stable_partial_updates": 1,
   "min_gap_ms": 0,
   "repeat_gap_ms": 450,
@@ -27,5 +27,6 @@
     "Accio"
   ],
   "asr_threads": 4,
-  "voice_style": "rosmen"
+  "voice_style": "rosmen",
+  "interaction_key": "F"
 }

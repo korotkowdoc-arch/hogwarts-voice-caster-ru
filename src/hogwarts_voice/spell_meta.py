@@ -22,6 +22,11 @@ READINGS = {
     "AvadaKedavra": ("Авада Кедавра", "ah-VAH-dah keh-DAH-vrah"),
     "Finisher": ("Древняя магия", "ancient magic"),
     "AppareVestigium": ("Путь к цели", "show objective path"),
+    "Alohomora": ("Алохомора", "interact with a nearby lock"),
+    "Finite": ("Фините", "cancel an active spell"),
+    "Broomstick": ("Акцио метла", "summon broom"),
+    "Map": ("Открой карту", "open map"),
+    "Inventory": ("Открой инвентарь", "open inventory"),
 }
 
 GROUPS = {
@@ -32,6 +37,7 @@ GROUPS = {
     "Dark Arts": ["Crucio", "Imperius", "AvadaKedavra"],
     "Essential": ["Stupefy", "Protego", "Oppugno", "Finisher"],
     "Transfiguration": ["Vanishment"],
+    "Actions": ["Alohomora", "Finite", "Broomstick", "Map", "Inventory"],
 }
 PALETTE = {
     "Force": ("#a887ef", "#2c2147", "СИЛОВОЕ"),
@@ -41,6 +47,7 @@ PALETTE = {
     "Dark Arts": ("#9bd0ae", "#1e3c2b", "ТЁМНАЯ МАГИЯ"),
     "Essential": ("#e1cdaa", "#49392c", "ОСНОВНОЕ"),
     "Transfiguration": ("#a6c6a8", "#2a4030", "ТРАНСФИГУРАЦИЯ"),
+    "Actions": ("#a2c9b9", "#223a35", "ДЕЙСТВИЯ"),
 }
 
 def group_of(spell: str) -> str:

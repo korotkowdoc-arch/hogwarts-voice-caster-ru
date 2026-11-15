@@ -35,6 +35,11 @@ UNSAFE_GENERIC_ALIASES = frozenset({
     "невидимость", "древняя магия", "трансформация",
     "трансфигурация", "путь к цели"
 })
+# Short contextual commands must match exactly. Fuzzy matching "open the map"
+# with a conversational phrase would be unsafe in live gameplay.
+EXACT_ONLY_COMMANDS = frozenset({
+    "Alohomora", "Finite", "Broomstick", "Map", "Inventory",
+})
 EXTRA_PRONUNCIATIONS = {
     "Lumos": ("люмос", "люмус", "люмас"),
     "Accio": ("акцио", "аксио"),
@@ -86,7 +91,7 @@ def match_incantation(text: str, spellbook: dict[str, list[str]],
                 candidates.append((spell, "exact"))
             # The special book-style phrases must match EXACTLY. Otherwise
             # a normal word such as "остолбенеть" may accidentally cast.
-            elif (not book_exception
+            elif (not book_exception and spell not in EXACT_ONLY_COMMANDS
                   and not (style == STYLE_ROSMEN
                            and target == normalized(visible_name(spell, style)))
                   and len(target) >= 9 and len(heard) >= 9

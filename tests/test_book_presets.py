@@ -6,6 +6,7 @@ from hogwarts_voice.voice_presets import (
     visible_name, spoken_aliases, validate_style,
 )
 from hogwarts_voice.game_commands import to_game_command, SUPPORTED_BASE_COMMANDS
+from hogwarts_voice.game_interactions import ACTION_IDS
 from hogwarts_voice.ru_asr import load_spell_aliases, match_incantation
 
 class BookVoiceTests(unittest.TestCase):
@@ -64,6 +65,8 @@ class BookVoiceTests(unittest.TestCase):
 
     def test_every_spoken_command_maps_to_known_game_command(self):
         for spell in self.book:
+            if spell in ACTION_IDS:
+                continue
             with self.subTest(spell=spell):
                 ipc = to_game_command(spell)
                 self.assertIn(ipc, SUPPORTED_BASE_COMMANDS)
@@ -74,6 +77,30 @@ class BookVoiceTests(unittest.TestCase):
         self.assertEqual(to_game_command("Wingardium"), "WingardiumLeviosa")
         self.assertEqual(to_game_command("Transformation"), "TransfiguraVerto")
         self.assertEqual(to_game_command("Finisher"), "Smash")
+
+    def test_new_context_and_menu_actions(self):
+        expected = {
+            "алохомора": "Alohomora",
+            "фините": "Finite",
+            "акцио метла": "Broomstick",
+            "открой карту": "Map",
+            "открой инвентарь": "Inventory",
+        }
+        for spoken, spell in expected.items():
+            with self.subTest(spoken=spoken):
+                selected, _ = match_incantation(
+                    spoken, self.book, enabled=self.allowed, style=STYLE_ROSMEN
+                )
+                self.assertEqual(selected, spell)
+        self.assertEqual(to_game_command("Broomstick"), "AccioBroomstick")
+        self.assertEqual(to_game_command("Map"), "AppertaMappa")
+        self.assertEqual(to_game_command("Inventory"), "AppertaCodex")
+        self.assertEqual(to_game_command("Finite"), "Finite")
+        with self.assertRaises(ValueError):
+            to_game_command("Alohomora")
+        for phrase in ("открой карты", "алохомору", "акцио метлы"):
+            self.assertIsNone(match_incantation(
+                phrase, self.book, enabled=self.allowed, style=STYLE_ROSMEN)[0])
 
     def test_unknown_game_command_is_blocked(self):
         with self.assertRaises(ValueError):
