@@ -17,6 +17,7 @@ EVENTS = {
     "meeting_declined": (-3, -1),
     "meeting_attended": (12, 8),
     "meeting_missed": (-10, -8),
+    "probe_ping": (0, 0),
 }
 
 def safe_id(value: str) -> str:
@@ -43,6 +44,10 @@ class World:
                     player TEXT NOT NULL, event_id TEXT NOT NULL,
                     npc TEXT NOT NULL, kind TEXT NOT NULL,
                     PRIMARY KEY(player,event_id));
+                CREATE TABLE IF NOT EXISTS probe_status (
+                    source TEXT PRIMARY KEY, last_seen INTEGER NOT NULL,
+                    event_id TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS milestones (
                     player TEXT NOT NULL, npc TEXT NOT NULL, milestone TEXT NOT NULL,
                     PRIMARY KEY(player,npc,milestone));
@@ -74,6 +79,18 @@ class World:
             raise ValueError("Unknown event type; allowed: " + ", ".join(EVENTS))
         da, dt = EVENTS[kind]
         now = int(time.time())
+        if kind == "probe_ping":
+            with self.lock:
+                cursor = self.db.execute(
+                    "INSERT OR IGNORE INTO events(player,event_id,npc,kind) VALUES(?,?,?,?)",
+                    (player,event_id,npc,kind))
+                if cursor.rowcount:
+                    self.db.execute(
+                        "INSERT INTO probe_status(source,last_seen,event_id) VALUES(?,?,?) "
+                        "ON CONFLICT(source) DO UPDATE SET last_seen=excluded.last_seen,event_id=excluded.event_id",
+                        (player,now,event_id))
+            return {"duplicate":not bool(cursor.rowcount), "probe":True, "received_at":now}
+
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
@@ -155,3 +172,38 @@ class World:
             self.db.execute("INSERT INTO source_offsets(source,byte_offset) VALUES(?,?) "
                             "ON CONFLICT(source) DO UPDATE SET byte_offset=excluded.byte_offset",
                             (source,offset))
+
+    def last_probe(self) -> dict:
+        """Local debug status only; not proof of an actual UE4SS game hook."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT source,last_seen FROM probe_status ORDER BY last_seen DESC LIMIT 1"
+            ).fetchone()
+        return {"source":row["source"],"received_at":row["last_seen"]} if row else {"source":None,"received_at":None}
+
+    def integrity_check(self) -> str:
+        with self.lock:
+            return self.db.execute("PRAGMA integrity_check").fetchone()[0]
+
+    def backup(self, directory: Path, keep: int = 5) -> Path:
+        """Online backup avoids corrupt copies when WAL is active."""
+        from datetime import datetime, timezone
+        directory.mkdir(parents=True, exist_ok=True)
+        stamp=datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        dest=directory / ("world-"+stamp+".sqlite3")
+        with self.lock:
+            target=sqlite3.connect(dest)
+            try:
+                self.db.backup(target)
+                if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                    raise OSError("Backup integrity check failed")
+            except BaseException:
+                target.close()
+                dest.unlink(missing_ok=True)
+                raise
+            finally:
+                target.close()
+        old=sorted(directory.glob("world-*.sqlite3"),reverse=True)
+        for path in old[max(1,keep):]:
+            path.unlink(missing_ok=True)
+        return dest
