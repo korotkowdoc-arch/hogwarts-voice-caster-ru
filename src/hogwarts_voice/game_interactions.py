@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ctypes
 import os
+import time
 from .windows import game_focused
 
 ACTION_IDS = frozenset({"Alohomora"})
@@ -69,10 +70,18 @@ def _send_keyboard(key: str) -> None:
         INPUT(type=1, data=INPUTUNION(ki=KEYBDINPUT(
             wVk=0, wScan=scan, dwFlags=SCANCODE | KEYUP, time=0, dwExtraInfo=0))),
     )
-    n = user32.SendInput(2, events, ctypes.sizeof(INPUT))
-    if n != 2:
-        raise OSError(f"SendInput inserted {n}/2 keyboard events: "
-                      f"{ctypes.get_last_error()}")
+    # A down/up pair in one Windows call can be too fast for Unreal's
+    # per-frame polling. Hold one key briefly, then ALWAYS release it.
+    size = ctypes.sizeof(INPUT)
+    n = user32.SendInput(1, ctypes.byref(events[0]), size)
+    if n != 1:
+        raise OSError(f"SendInput key-down failed: {ctypes.get_last_error()}")
+    try:
+        time.sleep(0.055)
+    finally:
+        released = user32.SendInput(1, ctypes.byref(events[1]), size)
+    if released != 1:
+        raise OSError(f"SendInput key-up failed: {ctypes.get_last_error()}")
 
 def interact_with_lock(*, key=DEFAULT_INTERACT_KEY,
                        focus_check=None, sender=None):
