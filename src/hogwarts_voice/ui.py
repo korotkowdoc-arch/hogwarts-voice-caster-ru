@@ -229,6 +229,20 @@ class App(ctk.CTk):
         )
         self.speed_menu.grid(row=1,column=1,padx=(14,20),pady=(0,18),sticky="ew")
         self.speed_menu.set(modes[1] if self.config_data.get("performance_mode") == "balanced" else modes[0])
+        self.focus_only = ctk.CTkSwitch(
+            settings,
+            text="Слушать только при активном окне игры",
+            command=self.change_focus_setting,
+            fg_color="#455269", progress_color=GOLD, button_color=TEXT,
+            text_color=MUTED,
+            font=ctk.CTkFont(family=FONT, size=12),
+        )
+        self.focus_only.grid(row=2, column=0, columnspan=2,
+                             padx=20, pady=(0, 15), sticky="w")
+        if self.config_data.get("require_game_focus", True):
+            self.focus_only.select()
+        else:
+            self.focus_only.deselect()
 
         actions = ctk.CTkFrame(body, fg_color="transparent")
         actions.pack(fill="x", pady=(0, 15))
@@ -271,6 +285,12 @@ class App(ctk.CTk):
         self.config_data["stable_partial_updates"] = 1 if fast else 2
         self.save_config()
         self.log("Режим изменён. При следующем запуске он вступит в силу.")
+
+    def change_focus_setting(self):
+        self.config_data["require_game_focus"] = bool(self.focus_only.get())
+        self.save_config()
+        self.log("Настройка активного окна изменена. Останови и запусти "
+                 "распознавание заново, чтобы применить её.")
 
     def set_status(self, value, color=GREEN):
         # Main-page widgets do not exist while viewing the training section.
@@ -322,6 +342,14 @@ class App(ctk.CTk):
         generation = self._proc_generation
         self.set_status("● ПРОВЕРКА МИКРОФОНА" if dry_run else "● РАСПОЗНАВАНИЕ АКТИВНО", GOLD)
         self.log("Запуск проверки микрофона..." if dry_run else "Запуск игрового распознавания...")
+        if dry_run:
+            self.log("[help] Проверка микрофона работает и при открытом окне программы.")
+        elif self.config_data.get("require_game_focus", True):
+            self.log("[help] Вернись в Hogwarts Legacy после нажатия «Начать колдовать». "
+                     "Пока это окно активно, голос игнорируется.")
+        else:
+            self.log("[help] Режим без проверки активного окна: команды могут отправляться, "
+                     "даже когда игра свёрнута.")
         def reader():
             try:
                 for line in proc.stdout:
@@ -352,6 +380,14 @@ class App(ctk.CTk):
                     self.log(str(value))
                     if "[sent]" in str(value) or "[TEST]" in str(value):
                         self.set_status("● ЗАКЛИНАНИЕ РАСПОЗНАНО", GREEN)
+                    elif "[focus] BLOCKED" in str(value):
+                        self.set_status("● ОКНО ИГРЫ НЕ АКТИВНО", RED)
+                    elif "[focus] LISTENING" in str(value):
+                        self.set_status("● МИКРОФОН СЛУШАЕТ", GOLD)
+                    elif "[mod] NOT READY" in str(value):
+                        self.set_status("● ИГРОВОЙ МОД НЕ ОТВЕЧАЕТ", RED)
+                    elif "[mod] READY" in str(value):
+                        self.set_status("● ИГРОВОЙ МОД ПОДКЛЮЧЕН", GREEN)
                     elif "Audio/runtime error" in str(value) or "Startup error" in str(value):
                         self.set_status("● ПРОВЕРЬ МИКРОФОН", RED)
                 elif kind == "exit":

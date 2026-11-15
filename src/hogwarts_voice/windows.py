@@ -1,16 +1,22 @@
-"""Safety switches for Windows-only game focus and keyboard shortcuts."""
+"""Foreground process detection for optional game focus gating."""
 from __future__ import annotations
+
 import ctypes
 import os
 
 VK_F8 = 0x77
 VK_F9 = 0x78
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+GAME_PROCESSES = frozenset({
+    "hogwartslegacy.exe",
+    "hogwartslegacy-win64-shipping.exe",
+    "phoenix-win64-shipping.exe",
+})
 
-def game_focused():
-    """Allow spells only when the PC game's EXE is foreground."""
+def foreground_process_name() -> str:
+    """Name of the currently focused executable, or empty if unavailable."""
     if os.name != "nt":
-        return False
+        return ""
     from ctypes import wintypes
     user32 = ctypes.WinDLL("user32", use_last_error=True)
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -27,23 +33,28 @@ def game_focused():
     kernel32.CloseHandle.restype = wintypes.BOOL
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
-        return False
+        return ""
     pid = wintypes.DWORD()
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid.value)
     if not handle:
-        return False
+        return ""
     try:
         buffer = ctypes.create_unicode_buffer(1024)
         size = wintypes.DWORD(len(buffer))
         if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
-            return False
-        name = buffer.value.rsplit("\\", 1)[-1].casefold()
-        return name in {"hogwartslegacy.exe", "phoenix-win64-shipping.exe"}
+            return ""
+        return buffer.value.rsplit("\\", 1)[-1].casefold()
     finally:
         kernel32.CloseHandle(handle)
 
-def down(vk):
+def is_game_process(name: str) -> bool:
+    return name.casefold() in GAME_PROCESSES
+
+def game_focused() -> bool:
+    return is_game_process(foreground_process_name())
+
+def down(vk: int) -> bool:
     if os.name != "nt":
         return False
     return bool(ctypes.windll.user32.GetAsyncKeyState(vk) & 0x8000)
@@ -54,10 +65,10 @@ class KeyboardState:
         self._was_f8 = False
 
     def update(self):
-        now = down(VK_F8)
+        pressed = down(VK_F8)
         toggled = False
-        if now and not self._was_f8:
+        if pressed and not self._was_f8:
             self.active = not self.active
             toggled = True
-        self._was_f8 = now
+        self._was_f8 = pressed
         return toggled

@@ -6,6 +6,7 @@ Speaker identity verification can be explicitly enabled but costs latency.
 from __future__ import annotations
 
 import argparse
+import audioop
 from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 import json
@@ -22,7 +23,7 @@ from .template_voice import PronunciationBank, SpeechSegmenter
 from .model_storage import installed_model_path, model_layout_ok, migrate_legacy
 from .spellbook import Spellbook
 from .stream import StreamGate
-from .windows import KeyboardState, VK_F9, down, game_focused
+from .windows import KeyboardState, VK_F9, down, game_focused, foreground_process_name
 
 ROOT = Path(__file__).resolve().parents[2]
 MODEL = installed_model_path(ROOT)
@@ -158,6 +159,8 @@ def main():
     meter = AudioDelayMeter()
     frames = round(block_ms * 16000 / 1000)
     verbose = cfg.get("verbose", False)
+    show_partials = cfg.get("show_partials", True)
+    mic_diagnostics = cfg.get("mic_diagnostics", True)
     debug_latency = cfg.get("debug_latency", True)
 
     def callback(indata, count, time_info, status):
@@ -189,6 +192,10 @@ def main():
           f"audio blocks: {block_ms} ms, partial stability: {cfg.get('stable_partial_updates', 1)}")
     print(f"Voice ID: {'ON (slower)' if verify_speaker else 'OFF (fast path)'}")
     print("F8: pause | Ctrl+C: stop", flush=True)
+    if not args.dry_run:
+        print("[help] Return to Hogwarts Legacy after pressing Start; "
+              "the program window does NOT count as active game.", flush=True)
+        print("[help] Use Check microphone to test while this window is active.", flush=True)
     if cfg.get("push_to_talk", False):
         print("Hold F9 to speak.", flush=True)
 
@@ -198,6 +205,9 @@ def main():
     last_heartbeat = float("-inf")
     last_partial = ""
     last_display = float("-inf")
+    last_microphone_log = float("-inf")
+    microphone_peak = 0
+    last_mod_ready = None
 
     def emit(spells, *, capture_at, speech_onset, score=None):
         for spell in spells:
@@ -207,6 +217,8 @@ def main():
             else:
                 # Do not trust a cached focus check at the moment of casting.
                 if cfg.get("require_game_focus", True) and not game_focused():
+                    print(f"[BLOCKED] {spell}: game not in foreground; "
+                          f"active process = {foreground_process_name() or '(unknown)'}", flush=True)
                     continue
                 ok, reason = bridge.send(spell, now=before)
             after = time.monotonic()
@@ -240,6 +252,13 @@ def main():
                     bridge.poll(now=now)
                     bridge.heartbeat()
                     last_heartbeat = now
+                    mod_ready = bridge.alive(now=now)
+                    if mod_ready != last_mod_ready:
+                        print("[mod] READY: Hogwarts Legacy SpellCaster connected"
+                              if mod_ready else
+                              "[mod] NOT READY: waiting for game's UE4SS SpellCaster",
+                              flush=True)
+                        last_mod_ready = mod_ready
 
                 # Avoid querying Windows process path for each ~20ms audio block.
                 if args.dry_run or not cfg.get("require_game_focus", True):
@@ -266,8 +285,19 @@ def main():
                         except queue.Empty:
                             break
                     was_enabled = enabled
-                    if verbose:
-                        print(f"[voice] {'listening' if enabled else 'inactive'}", flush=True)
+                    if enabled:
+                        print("[focus] LISTENING: voice commands enabled", flush=True)
+                    elif not hotkeys.active:
+                        print("[focus] PAUSED: F8 pressed", flush=True)
+                    elif cfg.get("push_to_talk", False) and not down(VK_F9):
+                        print("[focus] WAITING: hold F9 to speak", flush=True)
+                    elif not focus_ok:
+                        name = foreground_process_name() or "(unknown process)"
+                        print(f"[focus] BLOCKED: foreground is {name}; "
+                              "switch to the game or disable focus restriction in app settings.",
+                              flush=True)
+                    else:
+                        print("[focus] INACTIVE: waiting for game", flush=True)
 
                 # Async verification only when opt-in. Fast mode has no queue or
                 # machine-learning speaker comparison between ASR and casting.
@@ -294,6 +324,16 @@ def main():
                 if not enabled:
                     continue
 
+                if mic_diagnostics:
+                    rms = audioop.rms(chunk, 2)
+                    microphone_peak = max(microphone_peak, rms)
+                    if captured_at - last_microphone_log >= 1.5:
+                        print(f"[mic] input active, peak RMS={microphone_peak} "
+                              f"({'signal' if microphone_peak >= 400 else 'very quiet / silence'})",
+                              flush=True)
+                        microphone_peak = 0
+                        last_microphone_log = captured_at
+
                 onset = meter.observe(chunk, captured_at)
                 completed_phrase = segmenter.feed(chunk) if segmenter else None
                 if verifier:
@@ -308,7 +348,10 @@ def main():
 
                 # Live partials: don't wait for trailing silence.
                 spells = gate.feed(heard, final=is_final, now=decoded_at)
-                if heard and verbose and (heard != last_partial or decoded_at - last_display > 1):
+                if heard and (verbose or show_partials) and (
+                    (heard != last_partial and decoded_at - last_display >= 0.18)
+                    or decoded_at - last_display > 1.6
+                ):
                     print(f"[heard] {heard}", flush=True)
                     last_partial = heard
                     last_display = decoded_at
@@ -318,6 +361,9 @@ def main():
                         pending.extend(spells)
                     elif segmenter:
                         pending_vosk.extend(spells)
+                        if show_partials:
+                            print(f"[candidate] {', '.join(spells)}: waiting for trained audio check",
+                                  flush=True)
                     else:
                         emit(spells, capture_at=captured_at, speech_onset=onset)
 
@@ -343,7 +389,7 @@ def main():
                                 print(f"[trained] No match ({reason}, {score:.3f}); "
                                       f"Vosk fallback: {remaining}", flush=True)
                             emit(remaining[:1], capture_at=captured_at, speech_onset=onset)
-                        elif verbose or args.dry_run:
+                        elif verbose or args.dry_run or mic_diagnostics:
                             print(f"[trained] No confident match: {reason} ({score:.3f})", flush=True)
                     pending_vosk.clear()
 
