@@ -51,12 +51,15 @@ class DailyBudget:
             today = date.today().isoformat()
             try:
                 state = json.loads(self.path.read_text(encoding="utf-8"))
-                if state.get("date") != today:
+                if not isinstance(state,dict) or state.get("date") != today or not isinstance(state.get("counts"),dict):
                     state = {"date": today, "counts": {}}
             except (OSError, ValueError, TypeError):
                 state = {"date": today, "counts": {}}
             counts = state["counts"]
-            used = int(counts.get(provider, 0))
+            try:
+                used = max(0,int(counts.get(provider, 0)))
+            except (TypeError,ValueError,OverflowError):
+                used = 0
             if used >= self.limits[provider]:
                 return False
             counts[provider] = used + 1
@@ -136,8 +139,10 @@ class FreeRouter:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
         data = self._send("gemini", key, payload)
         try:
-            return "".join(part.get("text", "") for part in data["candidates"][0]["content"]["parts"])
-        except (KeyError, TypeError, IndexError) as exc:
+            parts=data["candidates"][0]["content"]["parts"]
+            return "".join(part["text"] for part in parts
+                           if isinstance(part,dict) and isinstance(part.get("text"),str))
+        except (KeyError, TypeError, IndexError, ValueError) as exc:
             raise ProviderError("gemini", "empty_answer") from exc
 
     def _groq(self, messages: list[dict], key: str, max_tokens: int, output_format: str = "text") -> str:
@@ -147,6 +152,9 @@ class FreeRouter:
             payload["response_format"] = {"type":"json_object"}
         data = self._send("groq", key, payload)
         try:
-            return data["choices"][0]["message"]["content"] or ""
+            content=data["choices"][0]["message"]["content"]
+            if not isinstance(content,str):
+                raise TypeError("Expected text completion")
+            return content
         except (KeyError, TypeError, IndexError) as exc:
             raise ProviderError("groq", "empty_answer") from exc
