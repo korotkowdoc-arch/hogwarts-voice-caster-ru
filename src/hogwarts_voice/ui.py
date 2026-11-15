@@ -16,6 +16,10 @@ from PIL import Image
 from tkinter import filedialog, messagebox
 from .spell_meta import READINGS, palette_of
 from .voice_presets import DEFAULT_STYLE, STYLE_LABELS, visible_name
+from .silence_mod import (
+    OFFICIAL_NONVERBAL_PAGE, OFFICIAL_AUTO_ALOHOMORA_PAGE,
+    install_nonverbal, set_nonverbal_enabled, nonverbal_status,
+)
 from .icon_assets import SOURCE_PAGE, count_icons, has_icon, icon_file, import_zip
 from .spellbook import Spellbook
 from .voice_profile import VoiceProfile
@@ -128,12 +132,14 @@ class App(ctk.CTk):
         button(s, "Атлас заклинаний", self.open_wizard).pack(fill="x", padx=17, pady=5)
         button(s, "Доступные заклинания", self.draw_spell_settings).pack(
             fill="x", padx=17, pady=5)
+        button(s, "Тихие заклинания / Алохомора",
+               self.draw_silence_settings).pack(fill="x", padx=17, pady=5)
         button(s, "Импорт игровых иконок", self.import_icons).pack(fill="x", padx=17, pady=5)
         button(s, "Источник иконок", lambda: webbrowser.open(SOURCE_PAGE)).pack(fill="x", padx=17, pady=5)
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v1.1", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v1.2", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -154,6 +160,132 @@ class App(ctk.CTk):
             json.dumps(self.config_data, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8"
         )
+
+    def draw_silence_settings(self):
+        """Silence spell voice lines using the user-supplied optional PAK."""
+        if self.wizard is not None and self.wizard.win.winfo_exists():
+            if self.wizard.busy:
+                return
+            self.wizard = None
+        self.clear_content()
+        self._active_page = "silence"
+        area = ctk.CTkScrollableFrame(self.content, fg_color="transparent")
+        area.pack(fill="both", expand=True, padx=28, pady=18)
+        heading(area, "Тихие заклинания", size=28).pack(anchor="w", pady=(0,10))
+        text(area,
+             "Только ты произносишь заклинание. Для отключения повтора "
+             "голосом персонажа установи необязательный Nonverbal Spells.",
+             size=12, wraplength=740).pack(anchor="w", pady=(0,12))
+        text(area, "1. Скачай мод с Nexus, распакуй архив. "
+             "2. Выбери извлечённый .pak и папку Hogwarts Legacy. "
+             "3. Перезапусти игру. Звуки магии остаются.",
+             size=12, wraplength=740).pack(anchor="w", pady=(0,11))
+        button(area, "ОТКРЫТЬ NONVERBAL SPELLS НА NEXUS",
+               lambda: webbrowser.open(OFFICIAL_NONVERBAL_PAGE),
+               width=370, height=41).pack(anchor="w", pady=4)
+        button(area, "УСТАНОВИТЬ СКАЧАННЫЙ .PAK",
+               self.install_silent_game_mod,
+               width=370, height=41).pack(anchor="w", pady=4)
+        root = self.config_data.get("game_folder", "")
+        pak = self.config_data.get("silent_mod_pak", "")
+        status = "не установлен"
+        if root and pak:
+            try:
+                state = nonverbal_status(pak, root)
+                status = {"enabled": "установлен, включён",
+                          "disabled": "установлен, выключен",
+                          "missing": "файл не найден",
+                          "unmanaged": "некорректный путь"}.get(state, state)
+            except (ValueError, OSError):
+                status = "папка игры не найдена"
+        self.silent_mod_status = text(area, "Состояние мода: " + status,
+                                      size=12, color=GOLD)
+        self.silent_mod_status.pack(anchor="w", pady=(9,8))
+        row = ctk.CTkFrame(area, fg_color="transparent")
+        row.pack(fill="x", pady=(0,7))
+        button(row, "Включить", lambda: self.toggle_silent_game_mod(True),
+               width=130, height=37).pack(side="left", padx=(0,8))
+        button(row, "Выключить", lambda: self.toggle_silent_game_mod(False),
+               width=130, height=37).pack(side="left")
+        text(area, "Вариант мода с Nexus по умолчанию оставляет голос при "
+             "Авада Кедавра; у автора есть версия, убирающая и его. "
+             "Изменения применяются только после перезапуска игры.",
+             size=11, wraplength=740).pack(anchor="w", pady=(0,18))
+        heading(area, "Алохомора", size=23).pack(anchor="w", pady=(0,7))
+        text(area, "Возле подходящего замка произнеси «Алохомора». "
+             "Программа нажмёт игровую кнопку взаимодействия, "
+             "но не отменит головоломку и не повысит уровень заклинания. "
+             "Включи Alohomora в «Доступные заклинания».",
+             size=12, wraplength=740).pack(anchor="w", pady=(0,9))
+        row2 = ctk.CTkFrame(area, fg_color="transparent")
+        row2.pack(fill="x", pady=(0,9))
+        text(row2, "Клавиша взаимодействия:", size=12).pack(
+            side="left", padx=(0,15))
+        self.interact_key_menu = ctk.CTkOptionMenu(
+            row2, values=["F", "E", "R", "G", "T", "H"],
+            command=self.set_interaction_key, fg_color=RAISED,
+            button_color="#2b4055", button_hover_color="#3d5670",
+            text_color=TEXT, width=90, height=35)
+        self.interact_key_menu.pack(side="left")
+        self.interact_key_menu.set(
+            self.config_data.get("interaction_key", "F"))
+        button(area, "АВТОМАТИЧЕСКАЯ МИНИ-ИГРА (NEXUS)",
+               lambda: webbrowser.open(OFFICIAL_AUTO_ALOHOMORA_PAGE),
+               width=370, height=40).pack(anchor="w", pady=(0,8))
+        text(area, "Auto Alohomora требует UE4SS 3.0+: не устанавливай "
+             "поверх SpellCaster без проверки версии. Можно также "
+             "использовать автозавершение замка на сложности «Сюжет».",
+             size=11, wraplength=740).pack(anchor="w", pady=(0,15))
+        button(area, "НА ГЛАВНУЮ", self.draw_home,
+               width=200, height=38).pack(anchor="w")
+
+    def install_silent_game_mod(self):
+        source = filedialog.askopenfilename(
+            parent=self, title="Выбери .pak из Nonverbal Spells",
+            filetypes=[("Unreal PAK", "*.pak")])
+        if not source:
+            return
+        root = filedialog.askdirectory(
+            parent=self, title="Выбери папку Hogwarts Legacy",
+            initialdir=self.config_data.get("game_folder") or None)
+        if not root:
+            return
+        try:
+            dest = install_nonverbal(source, root)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Не удалось установить мод", str(exc),
+                                 parent=self)
+            return
+        self.config_data["game_folder"] = root
+        self.config_data["silent_mod_pak"] = str(dest)
+        self.save_config()
+        self.draw_silence_settings()
+        messagebox.showinfo("Готово", "Перезапусти Hogwarts Legacy.",
+                            parent=self)
+
+    def toggle_silent_game_mod(self, enabled):
+        root = self.config_data.get("game_folder")
+        pak = self.config_data.get("silent_mod_pak")
+        if not root or not pak:
+            messagebox.showinfo("Не установлен",
+                                "Сначала установи файл .pak.",
+                                parent=self)
+            return
+        try:
+            set_nonverbal_enabled(pak, root, enabled)
+        except (ValueError, OSError) as exc:
+            messagebox.showerror("Не удалось переключить мод",
+                                 str(exc), parent=self)
+            return
+        self.draw_silence_settings()
+        messagebox.showinfo("Готово", "Перезапусти Hogwarts Legacy.",
+                            parent=self)
+
+    def set_interaction_key(self, key):
+        self.config_data["interaction_key"] = key
+        self.save_config()
+        self.log(f"[action] Взаимодействие: {key}. "
+                 "Перезапусти распознавание.")
 
     def draw_spell_settings(self):
         """Select which incantations may actually cast in the game.
@@ -431,10 +563,12 @@ class App(ctk.CTk):
     def set_speed(self, name):
         fast = name == "Максимальная скорость"
         self.config_data["performance_mode"] = "fast" if fast else "balanced"
-        self.config_data["block_ms"] = 20 if fast else 32
+        self.config_data["block_ms"] = 10 if fast else 32
         self.config_data["stable_partial_updates"] = 1 if fast else 2
         self.save_config()
-        self.log("Режим изменён. При следующем запуске он вступит в силу.")
+        self.log("Режим изменён. При следующем запуске он вступит в силу. "
+                 + ("Захват микрофона: 10 мс." if fast else
+                    "Захват микрофона: 32 мс."))
 
     def set_activation_mode(self, name):
         ptt = name == "Удерживать кнопку (1 заклинание)"
