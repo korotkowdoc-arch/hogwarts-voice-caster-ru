@@ -17,5 +17,8 @@
   "template_margin": 0.055,
   "mic_diagnostics": true,
   "show_partials": true,
-  "allow_untrained_vosk_fallback": false
+  "allow_untrained_vosk_fallback": false,
+  "recognition_engine": "acoustic_dtw",
+  "dtw_threshold": 0.72,
+  "dtw_margin": 0.065
 }

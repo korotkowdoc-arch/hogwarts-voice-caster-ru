@@ -79,6 +79,18 @@ def main():
         finally:
             bridge.close()
 
+    # Default acoustic engine never asks Vosk to guess a word.
+    try:
+        selected_cfg = load_config(args.config)
+    except (OSError, ValueError, KeyError, json.JSONDecodeError) as exc:
+        print(f"Config error: {exc}", flush=True)
+        return 2
+    if selected_cfg.get("recognition_engine", "acoustic_dtw") == "acoustic_dtw" and (
+        args.dry_run or args.listen
+    ):
+        from .dtw_listener import run as run_acoustic
+        return run_acoustic(args, selected_cfg)
+
     try:
         import sounddevice as sd
     except ImportError:

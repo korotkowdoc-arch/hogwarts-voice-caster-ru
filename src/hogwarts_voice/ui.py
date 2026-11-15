@@ -18,7 +18,7 @@ from .spell_meta import READINGS, palette_of
 from .icon_assets import SOURCE_PAGE, count_icons, has_icon, icon_file, import_zip
 from .spellbook import Spellbook
 from .voice_profile import VoiceProfile
-from .template_voice import PronunciationBank
+from .dtw_voice import DTWBank as PronunciationBank
 from .__main__ import ROOT, MODEL, DEFAULT_CONFIG, DEFAULT_SPELLS
 
 ctk.set_appearance_mode("dark")
@@ -129,7 +129,7 @@ class App(ctk.CTk):
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v0.6", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v0.8", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -495,7 +495,8 @@ class Wizard:
         self.heard=text(right,"РАСПОЗНАНО: —",size=13,color=TEXT,wraplength=360)
         self.heard.pack(anchor="w",padx=pad,pady=(4,12))
         self.accept=button(right,"ЗАПОМНИТЬ ЭТОТ ВАРИАНТ",self.accept_alias,height=38)
-        self.accept.pack(fill="x",padx=pad,pady=(0,16))
+        # Old Vosk text-alias control is hidden in acoustic mode.
+        self.accept.pack_forget()
         self.accept.configure(state="disabled")
 
         nav=ctk.CTkFrame(right,fg_color="transparent")
@@ -532,7 +533,7 @@ class Wizard:
         self.progress.set((self.index+1)/len(self.spells))
         self.notice.configure(text=f"Образцов: {min(self.bank.count(spell),3)} / 3 · запись 2,8 сек.",
                               text_color=GREEN if self.bank.trained(spell) else MUTED)
-        self.heard.configure(text="РАСПОЗНАНО: —")
+        self.heard.configure(text="Режим: сравнение звучания (без Vosk)")
         self.last_heard=""
         self.accept.configure(state="disabled")
         self.record.configure(state="normal")
@@ -583,12 +584,7 @@ class Wizard:
         try:
             import numpy as np
             import sounddevice as sd
-            from vosk import Model, KaldiRecognizer, SetLogLevel
-            if self.model is None:
-                if not MODEL.is_dir():
-                    raise FileNotFoundError("Русская модель Vosk не найдена. Повторно запусти install.bat для проверки и переноса.")
-                SetLogLevel(-1)
-                self.model=Model(str(MODEL))
+            # No Vosk and no Russian-language guess during enrollment.
             self.events.put(("recording",spell,None))
             if sys.platform=="win32":
                 import winsound
@@ -597,15 +593,10 @@ class Wizard:
                          dtype="float32",device=self.app.config_data.get("mic_device"))
             sd.wait()
             pcm=(np.clip(audio.flatten(),-1,1)*32767).astype("<i2").tobytes()
-            grammar=json.dumps(self.app.book.grammar(),ensure_ascii=False)
-            asr=KaldiRecognizer(self.model,16000,grammar)
-            asr.AcceptWaveform(pcm)
-            result=json.loads(asr.FinalResult()).get("text","").strip()
-            # Training is acoustic: the user pressed Record on THIS spell.
-            # Store its sound features even if general-purpose Vosk fails.
             count = self.bank.add(spell, pcm)
             self.bank.save()
-            self.events.put(("result", spell, (result, count)))
+            quality = self.bank.quality(spell)
+            self.events.put(("result", spell, (quality, count)))
         except Exception as exc:
             self.events.put(("error",spell,str(exc)))
 
@@ -623,19 +614,20 @@ class Wizard:
                     self.notice.configure(text=f"Ошибка записи: {value}",text_color=RED)
                 elif kind=="result":
                     self.busy=False
-                    heard, count = value
+                    quality, count = value
                     self.record.configure(state="normal")
                     ready = self.bank.trained(spell)
                     self.notice.configure(
                         text=(f"Образцов: {min(count,3)} / 3 · "
-                              + ("Обучено ✓" if ready else "повтори произношение")),
+                              + ("Готово к проверке ✓" if ready else "запиши ещё")),
                         text_color=GREEN if ready else GOLD
                     )
-                    self.last_heard=heard
                     self.heard.configure(
-                        text="Vosk услышал: "+(heard or "не разобрано")
-                             + " · на сохранение образца это не влияет")
-                    self.accept.configure(state="normal" if heard else "disabled")
+                        text=("Сходство тренировочных записей: "
+                              + f"{quality:.3f}" if quality is not None
+                              else "Шаблон звучания сохранён без Vosk")
+                    )
+                    self.accept.configure(state="disabled")
         except queue.Empty:
             pass
         self.win.after(120,self.pump)
