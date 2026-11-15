@@ -61,7 +61,10 @@ try:
     if app.config_data.get("recognition_engine") == "gigaam_ru":
         assert wizard.record.cget("state") == "disabled"
     assert wizard.win.winfo_toplevel() is app
-    assert len(app.winfo_children()) == 2, "Unexpected root-level window"
+    # The optional overlay is a THIRD, deliberately withdrawn, click-through
+    # child. A hidden overlay is not a second visible taskbar window.
+    assert len(app.winfo_children()) == 3, "Unexpected root-level window"
+    assert not app.overlay.window.winfo_viewable(), "Overlay must start hidden"
     wizard.next()
     wizard.win.update()
     wizard.prev()
