@@ -8,6 +8,11 @@ try:
     assert callable(app.state), "App.state() was overwritten by a widget"
     assert app.state() in {"normal", "zoomed", "iconic", "withdrawn"}
     app.set_status("Smoke test")
+    assert app.activation_menu is not None
+    assert app.ptt_key_menu is not None
+    assert app.activation_menu.get() in (
+        "Удерживать кнопку (1 заклинание)", "Свободное прослушивание"
+    )
 
     # Opening training should never spawn a second taskbar window.
     app.open_wizard()

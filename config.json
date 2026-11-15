@@ -6,7 +6,7 @@
   "repeat_gap_ms": 450,
   "mic_device": null,
   "require_game_focus": true,
-  "push_to_talk": false,
+  "push_to_talk": true,
   "verbose": false,
   "grammar_mode": "constrained",
   "speaker_verification": false,
@@ -20,5 +20,6 @@
   "allow_untrained_vosk_fallback": false,
   "recognition_engine": "acoustic_dtw",
   "dtw_threshold": 0.72,
-  "dtw_margin": 0.065
+  "dtw_margin": 0.065,
+  "ptt_key": "F9"
 }

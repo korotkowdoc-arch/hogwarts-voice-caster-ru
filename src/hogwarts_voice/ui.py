@@ -129,7 +129,7 @@ class App(ctk.CTk):
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v0.8.1", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v0.9", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -229,6 +229,34 @@ class App(ctk.CTk):
         )
         self.speed_menu.grid(row=1,column=1,padx=(14,20),pady=(0,18),sticky="ew")
         self.speed_menu.set(modes[1] if self.config_data.get("performance_mode") == "balanced" else modes[0])
+
+        text(settings, "РЕЖИМ АКТИВАЦИИ", size=10, color=GOLD,
+             weight="bold").grid(row=2, column=0, padx=(20,14), pady=(0,6), sticky="w")
+        text(settings, "КНОПКА ЗАПИСИ", size=10, color=GOLD,
+             weight="bold").grid(row=2, column=1, padx=(14,20), pady=(0,6), sticky="w")
+        modes_ptt = ["Удерживать кнопку (1 заклинание)", "Свободное прослушивание"]
+        self.activation_menu = ctk.CTkOptionMenu(
+            settings, values=modes_ptt, command=self.set_activation_mode,
+            fg_color=RAISED, button_color="#2b4055", button_hover_color="#3d5670",
+            text_color=TEXT, height=39, font=ctk.CTkFont(family=FONT, size=12),
+        )
+        self.activation_menu.grid(row=3, column=0, padx=(20,14),
+                                  pady=(0,14), sticky="ew")
+        self.activation_menu.set(modes_ptt[0] if self.config_data.get(
+            "push_to_talk", True) else modes_ptt[1])
+        self.ptt_key_menu = ctk.CTkOptionMenu(
+            settings, values=["F9", "F10", "F11", "Mouse4", "Mouse5"],
+            command=self.set_ptt_key, fg_color=RAISED,
+            button_color="#2b4055", button_hover_color="#3d5670",
+            text_color=TEXT, height=39,
+            font=ctk.CTkFont(family=FONT, size=12),
+        )
+        self.ptt_key_menu.grid(row=3, column=1, padx=(14,20),
+                               pady=(0,14), sticky="ew")
+        self.ptt_key_menu.set(self.config_data.get("ptt_key", "F9"))
+        if not self.config_data.get("push_to_talk", True):
+            self.ptt_key_menu.configure(state="disabled")
+
         self.focus_only = ctk.CTkSwitch(
             settings,
             text="Слушать только при активном окне игры",
@@ -237,7 +265,7 @@ class App(ctk.CTk):
             text_color=MUTED,
             font=ctk.CTkFont(family=FONT, size=12),
         )
-        self.focus_only.grid(row=2, column=0, columnspan=2,
+        self.focus_only.grid(row=4, column=0, columnspan=2,
                              padx=20, pady=(0, 15), sticky="w")
         if self.config_data.get("require_game_focus", True):
             self.focus_only.select()
@@ -285,6 +313,22 @@ class App(ctk.CTk):
         self.config_data["stable_partial_updates"] = 1 if fast else 2
         self.save_config()
         self.log("Режим изменён. При следующем запуске он вступит в силу.")
+
+    def set_activation_mode(self, name):
+        ptt = name == "Удерживать кнопку (1 заклинание)"
+        self.config_data["push_to_talk"] = ptt
+        self.ptt_key_menu.configure(state="normal" if ptt else "disabled")
+        self.save_config()
+        self.log("Режим обновлён: " + (
+            "кнопка удерживается для записи одного заклинания."
+            if ptt else "свободное прослушивание (экспериментальное)."
+        ))
+        self.log("Останови и заново запусти распознавание для применения.")
+
+    def set_ptt_key(self, key):
+        self.config_data["ptt_key"] = key
+        self.save_config()
+        self.log(f"Кнопка записи: {key}. Настройка вступит в силу после перезапуска распознавания.")
 
     def change_focus_setting(self):
         self.config_data["require_game_focus"] = bool(self.focus_only.get())
@@ -342,6 +386,10 @@ class App(ctk.CTk):
         generation = self._proc_generation
         self.set_status("● ПРОВЕРКА МИКРОФОНА" if dry_run else "● РАСПОЗНАВАНИЕ АКТИВНО", GOLD)
         self.log("Запуск проверки микрофона..." if dry_run else "Запуск игрового распознавания...")
+        if self.config_data.get("push_to_talk", True):
+            self.log(f"[ptt] Зажми {self.config_data.get('ptt_key','F9')}, "
+                     "произнеси ОДНО заклинание и отпусти кнопку.")
+            self.log("[ptt] До отпускания кнопки ничего не применяется.")
         if dry_run:
             self.log("[help] Проверка микрофона работает и при открытом окне программы.")
         elif self.config_data.get("require_game_focus", True):

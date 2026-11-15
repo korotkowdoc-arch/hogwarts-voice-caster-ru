@@ -180,7 +180,7 @@ def run(args, cfg):
                     prev_enabled = enabled
                     if enabled:
                         print("[focus] LISTENING" +
-                              (f" — hold {ptt_name} to record" if ptt_mode else ""),
+                              (f" - hold {ptt_name} to record" if ptt_mode else ""),
                               flush=True)
                     else:
                         print(f"[focus] BLOCKED ({foreground_process_name() or 'inactive'})",
