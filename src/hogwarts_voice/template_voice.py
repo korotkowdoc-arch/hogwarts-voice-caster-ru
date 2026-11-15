@@ -160,6 +160,10 @@ class PronunciationBank:
     def trained(self, spell):
         return self.count(spell) >= MIN_TAKES
 
+    def clear(self, spell: str):
+        """Remove only one spell's invalid training examples."""
+        self.samples.pop(spell, None)
+
     def trained_spells(self):
         return {spell for spell in self.samples if self.trained(spell)}
 

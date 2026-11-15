@@ -486,6 +486,9 @@ class Wizard:
         self.progress.pack(fill="x",padx=pad,pady=(3,20))
         self.record=button(right,"ЗАПИСАТЬ ОБРАЗЕЦ ГОЛОСА",self.record_click,primary=True)
         self.record.pack(fill="x",padx=pad,pady=(0,12))
+        self.reset_samples=button(right,"СБРОСИТЬ ОБРАЗЦЫ ЭТОГО ЗАКЛИНАНИЯ",
+                                  self.clear_samples,height=36)
+        self.reset_samples.pack(fill="x",padx=pad,pady=(0,12))
         self.notice=text(right,"Запиши заклинание три раза. Vosk не обязан угадать текст.",
                          size=12,wraplength=360)
         self.notice.pack(anchor="w",padx=pad,pady=(0,12))
@@ -547,6 +550,25 @@ class Wizard:
             return
         self.index+=1
         self.draw()
+
+    def clear_samples(self):
+        if self.busy:
+            return
+        spell = self.spell
+        if not self.bank.count(spell):
+            self.notice.configure(text="Образцов для удаления нет.", text_color=MUTED)
+            return
+        if not messagebox.askyesno(
+            "Удаление примеров",
+            f"Удалить все записи произношения для {spell}? Остальные заклинания сохранятся.",
+            parent=self.app
+        ):
+            return
+        self.bank.clear(spell)
+        self.bank.save()
+        self.draw()
+        self.notice.configure(text="Образцы очищены. Запиши три новых произнесения.",
+                              text_color=GOLD)
 
     def record_click(self):
         if self.busy:

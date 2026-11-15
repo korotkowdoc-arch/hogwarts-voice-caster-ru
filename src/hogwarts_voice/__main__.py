@@ -20,6 +20,7 @@ from typing import Any
 from .bridge import SpellBridge
 from .latency import AudioDelayMeter
 from .template_voice import PronunciationBank, SpeechSegmenter
+from .recognition_policy import route_spells
 from .model_storage import installed_model_path, model_layout_ok, migrate_legacy
 from .spellbook import Spellbook
 from .stream import StreamGate
@@ -130,7 +131,12 @@ def main():
     # guesses until the live acoustic matcher has examined that phrase.
     segmenter = SpeechSegmenter(silence_ms=100) if trained_spells else None
     pending_vosk = []
+    allow_fallback = bool(cfg.get("allow_untrained_vosk_fallback", False))
     print(f"Pronunciation templates: {len(trained_spells)} trained spell(s)", flush=True)
+    if trained_spells:
+        print("[policy] Strict learned spells only" if not allow_fallback else
+              "[policy] WARNING: untrained Vosk fallback enabled; false spells possible",
+              flush=True)
     verify_speaker = bool(cfg.get("speaker_verification", False))
     verifier = None
     worker = None
@@ -376,21 +382,33 @@ def main():
                         )
                     except ValueError as exc:
                         selected, score, reason = None, 0.0, str(exc)
+                    approved = route_spells(
+                        trained_spells=trained_spells,
+                        acoustic_spell=selected,
+                        vosk_candidates=pending_vosk,
+                        allow_untrained_fallback=allow_fallback,
+                    )
                     if selected:
                         print(f"[trained] {selected}: similarity={score:.3f}", flush=True)
-                        emit([selected], capture_at=captured_at, speech_onset=onset)
                     else:
-                        # Only untrained spells use speculative Vosk output.
-                        # Never replace an already-trained word with a Vosk guess
-                        # after template mismatch (reduces dangerous miscasts).
-                        remaining = [sp for sp in pending_vosk if sp not in trained_spells]
-                        if remaining:
-                            if verbose or args.dry_run:
-                                print(f"[trained] No match ({reason}, {score:.3f}); "
-                                      f"Vosk fallback: {remaining}", flush=True)
-                            emit(remaining[:1], capture_at=captured_at, speech_onset=onset)
-                        elif verbose or args.dry_run or mic_diagnostics:
-                            print(f"[trained] No confident match: {reason} ({score:.3f})", flush=True)
+                        if verbose or args.dry_run or mic_diagnostics:
+                            print(f"[trained] No confident match: {reason} ({score:.3f})",
+                                  flush=True)
+                        if mic_diagnostics or args.dry_run:
+                            try:
+                                ranking = bank.rank(completed_phrase)[:3]
+                                print("[rank] " + (", ".join(
+                                    f"{spell}={value:.3f}" for spell, value in ranking)
+                                    or "no recorded templates"), flush=True)
+                            except ValueError:
+                                pass
+                        if pending_vosk and not approved:
+                            print("[blocked] Vosk guessed "
+                                  + ", ".join(pending_vosk)
+                                  + "; acoustic recognition did not confirm the spell.",
+                                  flush=True)
+                    if approved:
+                        emit(approved, capture_at=captured_at, speech_onset=onset)
                     pending_vosk.clear()
 
                 if verifier and pending:

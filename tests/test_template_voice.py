@@ -41,6 +41,14 @@ class TemplateTests(unittest.TestCase):
             self.assertEqual(loaded.count("Accio"), 3)
             self.assertTrue(loaded.match(synthetic(281), threshold=0.4)[0] == "Accio")
 
+    def test_clear_only_selected_spell(self):
+        bank = PronunciationBank()
+        bank.add("Lumos", synthetic(280))
+        bank.add("Accio", synthetic(320))
+        bank.clear("Lumos")
+        self.assertEqual(bank.count("Lumos"), 0)
+        self.assertEqual(bank.count("Accio"), 1)
+
     def test_segmenter_keeps_phrase_and_ends_at_silence(self):
         seg = SpeechSegmenter()
         silence = b"\x00\x00" * 320

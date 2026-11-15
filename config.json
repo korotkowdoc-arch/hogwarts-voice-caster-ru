@@ -16,5 +16,6 @@
   "template_threshold": 0.78,
   "template_margin": 0.055,
   "mic_diagnostics": true,
-  "show_partials": true
+  "show_partials": true,
+  "allow_untrained_vosk_fallback": false
 }
