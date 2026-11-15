@@ -87,3 +87,29 @@ NPC animations require separate development and testing.
 GitHub Actions runs tests on Ubuntu and Windows. After tests pass,
 it builds a Windows standalone EXE ZIP using PyInstaller and uploads it
 as a GitHub Actions artifact. It does NOT publish a GitHub Release.
+
+
+## 0.2.0 — Sonorus integration test and game event inbox
+
+Read SONORUS_SETUP.md for step-by-step Sonorus 1.0.7 configuration.
+The bridge now accepts more OpenAI-compatible text chat message structures
+and opt-in system-prompt memory markers; it does not execute AI tool calls.
+It also creates character-specific story proposals, with exactly-once
+milestones for Sebastian, Ominis and Poppy.
+
+When HLW_WATCH_EVENTS=1 (default in run.bat), an **optional JSONL inbox**
+watches %LOCALAPPDATA%/HogwartsLivingWorld/game-events.jsonl.
+A future authenticated game adapter can append only allowlisted events:
+
+    {"player_id":"slot_1","npc_id":"sebastian","event":"player_helped","event_id":"quest_1"}
+
+Each complete line is processed once. It never edits any Hogwarts save.
+This is NOT a working UE4SS hook yet; the game does NOT write this file.
+
+To test safely without game files:
+
+    powershell -ExecutionPolicy Bypass -File .\demo-story.ps1
+
+Sonorus custom OpenAI URL, JSON and streaming support are **not game-tested**.
+Initial support is text/subtitle-only. Cloud speech integration to Sonorus
+is a separate milestone.
