@@ -1,0 +1,12 @@
+{
+  "samplerate": 16000,
+  "block_ms": 32,
+  "stable_partial_updates": 2,
+  "min_gap_ms": 0,
+  "repeat_gap_ms": 500,
+  "mic_device": null,
+  "require_game_focus": true,
+  "push_to_talk": false,
+  "verbose": true,
+  "grammar_mode": "constrained"
+}
