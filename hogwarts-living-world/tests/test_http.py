@@ -11,8 +11,10 @@ from hlw.providers import NoFreeProvider, Completion
 
 class FakeRouter:
     configured=["test_fake"]
-    def complete(self,messages,*,max_tokens=250):
-        return Completion("Здравствуй, волшебник!","fake","test_fake")
+    last_messages=[]
+    def complete(self,messages,*,max_tokens=250,output_format="text"):
+        self.last_messages=messages
+        return Completion('{"ok":true}' if output_format=="json_object" else "Здравствуй, волшебник!","fake","test_fake")
 
 class MissingRouter:
     configured=[]
@@ -22,7 +24,8 @@ class MissingRouter:
 class ServerTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory()
-        self.srv=ThreadingHTTPServer(("127.0.0.1",0),create_app(Path(self.tmp.name),FakeRouter()))
+        self.router=FakeRouter()
+        self.srv=ThreadingHTTPServer(("127.0.0.1",0),create_app(Path(self.tmp.name),self.router))
         self.t=threading.Thread(target=self.srv.serve_forever,daemon=True)
         self.t.start()
         self.base=f"http://127.0.0.1:{self.srv.server_port}"
@@ -57,6 +60,20 @@ class ServerTests(unittest.TestCase):
         self.assertEqual(json.loads(body)["affinity"],12)
         _,body=self.request("/v1/world/outbox?player_id=save_1")
         self.assertEqual(len(json.loads(body)["events"]),1)
+
+    def test_system_marker_injects_save_aware_memory(self):
+        self.request("/v1/world/event",{"player_id":"save_1","npc_id":"sebastian",
+                                          "event":"player_refused","event_id":"decision_7"})
+        self.request("/v1/chat/completions",{"messages":[
+            {"role":"system","content":"You are Sebastian [HLW_CONTEXT player=save_1 npc=sebastian]"},
+            {"role":"user","content":"Привет"}]})
+        self.assertIn('"trust": -4',self.router.last_messages[0]["content"])
+        self.assertIn('"affinity": -9',self.router.last_messages[0]["content"])
+
+    def test_json_object_response_mode(self):
+        _,body=self.request("/v1/chat/completions",{"response_format":{"type":"json_object"},
+                              "messages":[{"role":"user","content":"Answer JSON"}]})
+        self.assertEqual(json.loads(json.loads(body)["choices"][0]["message"]["content"]),{"ok":True})
 
     def test_invalid_messages_is_400(self):
         with self.assertRaises(HTTPError) as caught:
