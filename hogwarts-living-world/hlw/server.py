@@ -137,11 +137,22 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 if path == "/v1/world/backup":
                     dest=world.backup(directory / "backups")
                     return self._answer(200,{"backup_created":True,"file":dest.name})
-                if path == "/v1/voice/preview":
+                if path in ("/v1/voice/preview","/v1/audio/speech"):
                     if speech is None:
-                        return self._answer(404,{"error":"cloud_tts_preview_disabled"})
-                    audio=speech.synthesize(body.get("text"),body.get("voice","Kore"),
-                                             body.get("style","neutral"))
+                        return self._answer(404,{"error":"cloud_tts_disabled"})
+                    if path == "/v1/audio/speech":
+                        # OpenAI-compatible WAV subset. Never obey an input
+                        # model name as a remote provider/model override.
+                        fmt=body.get("response_format","wav")
+                        if fmt != "wav":
+                            raise ValueError("Only WAV output is supported by the free cloud bridge")
+                        voice=body.get("voice","alloy")
+                        voice={"alloy":"Kore","nova":"Aoede","echo":"Charon",
+                               "fable":"Puck"}.get(voice,voice)
+                        audio=speech.synthesize(body.get("input"),voice,"neutral")
+                    else:
+                        audio=speech.synthesize(body.get("text"),body.get("voice","Kore"),
+                                                 body.get("style","neutral"))
                     self.send_response(200)
                     self.send_header("Content-Type","audio/wav")
                     self.send_header("Content-Length",str(len(audio)))
