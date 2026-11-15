@@ -110,9 +110,14 @@ class World:
                     (player,npc,affinity,trust,now))
                 # Only proposals. A verified game adapter must consume and confirm these.
                 if kind == "player_refused" and trust <= -8:
-                    self._enqueue(player,npc,"npc_note",{"reason":"unresolved_refusal","tone":"cold"},now)
+                    self._enqueue_once(player,npc,"first_conflict","npc_note",
+                                       {"reason":"unresolved_refusal","tone":"cold"},now)
                 elif kind == "player_helped" and affinity >= 12:
-                    self._enqueue(player,npc,"npc_note",{"reason":"gratitude","tone":"warm"},now)
+                    self._enqueue_once(player,npc,"first_gratitude","npc_note",
+                                       {"reason":"gratitude","tone":"warm"},now)
+                if trust <= -25:
+                    self._enqueue_once(player,npc,"serious_distrust","relationship_consequence_proposal",
+                                       {"behavior":"avoids_player","requires_game_adapter":True},now)
                 # Deterministic story milestone, once per save & NPC, never directly a game action.
                 if npc in ("sebastian","ominis","poppy") and affinity >= 24 and trust >= 16:
                     inserted = self.db.execute(
@@ -135,6 +140,14 @@ class World:
                 raise
         return {"duplicate":False,"player_id":player,"npc_id":npc,"affinity":affinity,
                 "trust":trust,"updated":now}
+
+    def _enqueue_once(self, player: str, npc: str, milestone: str,
+                      kind: str, payload: dict, now: int):
+        inserted=self.db.execute(
+            "INSERT OR IGNORE INTO milestones(player,npc,milestone) VALUES(?,?,?)",
+            (player,npc,milestone))
+        if inserted.rowcount:
+            self._enqueue(player,npc,kind,payload,now)
 
     def _enqueue(self, player: str, npc: str, kind: str, payload: dict, now: int):
         self.db.execute("INSERT INTO outbox(player,npc,kind,payload,created) VALUES(?,?,?,?,?)",
