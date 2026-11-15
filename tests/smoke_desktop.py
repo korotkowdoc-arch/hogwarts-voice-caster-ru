@@ -8,6 +8,8 @@ try:
     assert callable(app.state), "App.state() was overwritten by a widget"
     assert app.state() in {"normal", "zoomed", "iconic", "withdrawn"}
     app.set_status("Smoke test")
+    assert app.overlay is not None
+    assert not app.overlay.enabled
     app.draw_silence_settings()
     app.update()
     assert app._active_page == "silence"

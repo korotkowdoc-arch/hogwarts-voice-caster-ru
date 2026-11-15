@@ -16,6 +16,7 @@ from PIL import Image
 from tkinter import filedialog, messagebox
 from .spell_meta import READINGS, palette_of
 from .voice_presets import DEFAULT_STYLE, STYLE_LABELS, visible_name
+from .game_overlay import GameOverlay
 from .silence_mod import (
     OFFICIAL_NONVERBAL_PAGE, OFFICIAL_AUTO_ALOHOMORA_PAGE,
     install_nonverbal, set_nonverbal_enabled, nonverbal_status,
@@ -123,6 +124,9 @@ class App(ctk.CTk):
 
         self.draw_sidebar()
         self.draw_home()
+        self.overlay = GameOverlay(
+            self, enabled=self.config_data.get("overlay_enabled", False)
+        )
         self.after(110, self.pump)
         self.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -531,6 +535,19 @@ class App(ctk.CTk):
         else:
             self.focus_only.deselect()
 
+        self.overlay_switch = ctk.CTkSwitch(
+            settings, text="Показывать результат поверх игры (оконный без рамки)",
+            command=self.change_overlay_setting,
+            fg_color="#455269", progress_color=GOLD, button_color=TEXT,
+            text_color=MUTED, font=ctk.CTkFont(family=FONT,size=12),
+        )
+        self.overlay_switch.grid(row=5, column=0, columnspan=2, sticky="w",
+                                 padx=20, pady=(0,12))
+        if self.config_data.get("overlay_enabled", False):
+            self.overlay_switch.select()
+        else:
+            self.overlay_switch.deselect()
+
         actions = ctk.CTkFrame(body, fg_color="transparent")
         actions.pack(fill="x", pady=(0, 15))
         actions.grid_columnconfigure(0,weight=1)
@@ -590,6 +607,15 @@ class App(ctk.CTk):
         self.config_data["ptt_key"] = key
         self.save_config()
         self.log(f"Кнопка записи: {key}. Настройка вступит в силу после перезапуска распознавания.")
+
+    def change_overlay_setting(self):
+        selected = bool(self.overlay_switch.get())
+        self.config_data["overlay_enabled"] = selected
+        self.save_config()
+        if hasattr(self, "overlay"):
+            self.overlay.set_enabled(selected)
+        self.log("[overlay] " + ("Включён" if selected else "Выключен") +
+                 ". Не перехватывает мышь и не меняет управление игрой.")
 
     def change_focus_setting(self):
         self.config_data["require_game_focus"] = bool(self.focus_only.get())
@@ -697,8 +723,16 @@ class App(ctk.CTk):
                     continue
                 if kind == "log":
                     self.log(str(value))
-                    if "[sent]" in str(value) or "[TEST]" in str(value):
-                        self.set_status("● ЗАКЛИНАНИЕ РАСПОЗНАНО", GREEN)
+                    if hasattr(self,"overlay"):
+                        self.overlay.show(str(value))
+                    if "[game:cast]" in str(value):
+                        self.set_status("● ЗАКЛИНАНИЕ ПРИМЕНЕНО (ПО ЖУРНАЛУ МОДА)", GREEN)
+                    elif "[game:failed]" in str(value):
+                        self.set_status("● МОД НЕ ПРИМЕНИЛ ЗАКЛИНАНИЕ", RED)
+                    elif "[sent]" in str(value):
+                        self.set_status("● ОТПРАВЛЕНО В ИГРУ (ОЖИДАНИЕ ОТВЕТА)", GOLD)
+                    elif "[TEST]" in str(value):
+                        self.set_status("● ЗАКЛИНАНИЕ РАСПОЗНАНО В ТЕСТЕ", GREEN)
                     elif "[focus] BLOCKED" in str(value):
                         self.set_status("● ОКНО ИГРЫ НЕ АКТИВНО", RED)
                     elif "[focus] LISTENING" in str(value):
@@ -755,6 +789,8 @@ class App(ctk.CTk):
     def close(self):
         self._closed = True
         self.stop()
+        if hasattr(self,"overlay"):
+            self.overlay.close()
         self.destroy()
 
 class Wizard:
