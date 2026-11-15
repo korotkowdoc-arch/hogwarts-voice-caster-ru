@@ -6,10 +6,9 @@ on:
     paths:
       - 'hogwarts-living-world/**'
       - '.github/workflows/hogwarts-living-world.yml'
-  pull_request:
-    paths:
-      - 'hogwarts-living-world/**'
-      - '.github/workflows/hogwarts-living-world.yml'
+concurrency:
+  group: hlw-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   tests:
