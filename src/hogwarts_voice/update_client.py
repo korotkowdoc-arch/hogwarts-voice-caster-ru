@@ -22,7 +22,7 @@ REPO="korotkowdoc-arch/hogwarts-voice-caster-ru"
 MAX_ZIP_BYTES=15_000_000
 MAX_EXTRACT_BYTES=25_000_000
 _AGENT="HogwartsVoiceCasterRU-Update/1.0"
-_SEMVER=re.compile(r'__version__\s*=\s*["\\'](\d+\.\d+\.\d+)["\\']')
+_SEMVER=re.compile(r"__version__\s*=\s*['\"](\d+\.\d+\.\d+)['\"]")
 _SHA=re.compile(r"^[0-9a-f]{40}$")
 
 @dataclass(frozen=True)

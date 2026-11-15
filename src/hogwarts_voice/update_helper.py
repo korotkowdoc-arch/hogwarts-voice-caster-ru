@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 def parent_stopped(pid: int, *, timeout=45.0) -> bool:
     if pid<=0:
@@ -56,7 +57,7 @@ def install_source(stage: Path, root: Path, *, verify=None) -> Path:
     backups=root/".hvc-backups"
     backups.mkdir(exist_ok=True)
     backup=backups/(time.strftime("%Y%m%d-%H%M%S")+
-                    "-"+str(os.getpid()))
+                    "-"+uuid.uuid4().hex[:10])
     backup.mkdir(exist_ok=False)
     saved=backup/"src"
     shutil.move(str(original),str(saved))
