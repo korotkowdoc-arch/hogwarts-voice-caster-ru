@@ -4,6 +4,7 @@ import threading
 import unittest
 from http.server import ThreadingHTTPServer
 from pathlib import Path
+from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.request import Request,urlopen
 from hlw.server import create_app
@@ -43,6 +44,34 @@ class ServerTests(unittest.TestCase):
                     method="POST" if body is not None else "GET")
         with urlopen(req,timeout=3) as response:
             return response.headers.get("Content-Type"),response.read().decode()
+
+    def test_openai_wav_speech_alias_never_calls_paid_model(self):
+        class DummySpeech:
+            called = []
+            def synthesize(self,text,voice,style):
+                self.called.append((text,voice,style))
+                return b"RIFF" + b"\\x00"*8 + b"WAVE"
+        dummy=DummySpeech()
+        with patch.dict("os.environ",{"HLW_ENABLE_CLOUD_TTS":"1"}), patch("hlw.server.CloudSpeech",return_value=dummy):
+            app=create_app(Path(self.tmp.name)/"tts",FakeRouter())
+        srv=ThreadingHTTPServer(("127.0.0.1",0),app)
+        worker=threading.Thread(target=srv.serve_forever,daemon=True)
+        worker.start()
+        try:
+            base=f"http://127.0.0.1:{srv.server_port}/v1/audio/speech"
+            payload={"model":"tts-1","input":"Привет","voice":"alloy","response_format":"wav"}
+            req=Request(base,data=json.dumps(payload).encode(),headers={"Content-Type":"application/json"})
+            with urlopen(req,timeout=3) as response:
+                self.assertEqual(response.headers["Content-Type"],"audio/wav")
+                self.assertTrue(response.read().startswith(b"RIFF"))
+            self.assertEqual(dummy.called,[("Привет","Kore","neutral")])
+            payload["response_format"]="mp3"
+            req=Request(base,data=json.dumps(payload).encode(),headers={"Content-Type":"application/json"})
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(req,timeout=3)
+            self.assertEqual(caught.exception.code,400)
+        finally:
+            srv.shutdown();srv.server_close();worker.join();app.close_storage()
 
     def test_dashboard_is_local_and_never_contains_secrets(self):
         req=Request(self.base+"/")
