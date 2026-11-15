@@ -20,6 +20,7 @@ try:
     assert app._active_page == "training"
     assert app.wizard is not None
     wizard = app.wizard
+    assert callable(wizard.record_click)
     assert wizard.win.winfo_toplevel() is app
     assert len(app.winfo_children()) == 2, "Unexpected root-level window"
     wizard.next()

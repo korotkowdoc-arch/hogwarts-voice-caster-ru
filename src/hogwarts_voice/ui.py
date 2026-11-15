@@ -19,6 +19,7 @@ from .icon_assets import SOURCE_PAGE, count_icons, has_icon, icon_file, import_z
 from .spellbook import Spellbook
 from .voice_profile import VoiceProfile
 from .dtw_voice import DTWBank as PronunciationBank
+from .training_capture import capture_one_hold
 from .__main__ import ROOT, MODEL, DEFAULT_CONFIG, DEFAULT_SPELLS
 
 ctk.set_appearance_mode("dark")
@@ -129,7 +130,7 @@ class App(ctk.CTk):
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v0.9", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v0.9.1", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -532,12 +533,12 @@ class Wizard:
         self.progress=ctk.CTkProgressBar(right,progress_color=GOLD,
                                          fg_color="#2a3548",height=6)
         self.progress.pack(fill="x",padx=pad,pady=(3,20))
-        self.record=button(right,"ЗАПИСАТЬ ОБРАЗЕЦ ГОЛОСА",self.record_click,primary=True)
+        self.record=button(right,"ОБУЧИТЬ ПРОИЗНОШЕНИЕ",self.record_click,primary=True)
         self.record.pack(fill="x",padx=pad,pady=(0,12))
         self.reset_samples=button(right,"СБРОСИТЬ ОБРАЗЦЫ ЭТОГО ЗАКЛИНАНИЯ",
                                   self.clear_samples,height=36)
         self.reset_samples.pack(fill="x",padx=pad,pady=(0,12))
-        self.notice=text(right,"Запиши заклинание три раза. Vosk не обязан угадать текст.",
+        self.notice=text(right,"Нажми кнопку, затем зажми F9, произнеси заклинание и отпусти F9.",
                          size=12,wraplength=360)
         self.notice.pack(anchor="w",padx=pad,pady=(0,12))
         self.heard=text(right,"РАСПОЗНАНО: —",size=13,color=TEXT,wraplength=360)
@@ -579,7 +580,8 @@ class Wizard:
         self.phonetic.configure(text=f"Английская транскрипция: {phon}")
         self.number.configure(text=f"ЗАКЛИНАНИЕ {self.index+1:02d} / {len(self.spells)}")
         self.progress.set((self.index+1)/len(self.spells))
-        self.notice.configure(text=f"Образцов: {min(self.bank.count(spell),3)} / 3 · запись 2,8 сек.",
+        self.notice.configure(text=f"Образцов: {self.bank.count(spell)} / 3 · "
+                                     f"удерживай {self.app.config_data.get('ptt_key', 'F9')} для одного слова.",
                               text_color=GREEN if self.bank.trained(spell) else MUTED)
         self.heard.configure(text="Режим: сравнение звучания (без Vosk)")
         self.last_heard=""
@@ -625,22 +627,21 @@ class Wizard:
         self.busy=True
         self.record.configure(state="disabled")
         self.accept.configure(state="disabled")
-        self.notice.configure(text="Инициализация микрофона...",text_color=GOLD)
+        self.notice.configure(text="Подключение микрофона. Готовься зажать кнопку...",text_color=GOLD)
         threading.Thread(target=self.worker,args=(self.spell,),daemon=True).start()
 
     def worker(self,spell):
         try:
-            import numpy as np
-            import sounddevice as sd
-            # No Vosk and no Russian-language guess during enrollment.
-            self.events.put(("recording",spell,None))
-            if sys.platform=="win32":
-                import winsound
-                winsound.Beep(660,75)
-            audio=sd.rec(int(2.8*16000),samplerate=16000,channels=1,
-                         dtype="float32",device=self.app.config_data.get("mic_device"))
-            sd.wait()
-            pcm=(np.clip(audio.flatten(),-1,1)*32767).astype("<i2").tobytes()
+            # Identical PCM16 sampling and physical key hold as game PTT.
+            # No fixed recording window or silence endpoint.
+            key = self.app.config_data.get("ptt_key", "F9")
+            pcm = capture_one_hold(
+                device=self.app.config_data.get("mic_device"),
+                key=key,
+                state_callback=lambda message: self.events.put(
+                    ("recording", spell, message)
+                ),
+            )
             count = self.bank.add(spell, pcm)
             self.bank.save()
             quality = self.bank.quality(spell)
@@ -655,7 +656,7 @@ class Wizard:
             while True:
                 kind,spell,value=self.events.get_nowait()
                 if kind=="recording":
-                    self.notice.configure(text="● ЗАПИСЬ ИДЁТ — произнеси слово",text_color=GOLD)
+                    self.notice.configure(text=value or "Нажми кнопку для записи",text_color=GOLD)
                 elif kind=="error":
                     self.busy=False
                     self.record.configure(state="normal")
@@ -678,7 +679,7 @@ class Wizard:
                     self.heard.configure(
                         text=("Согласованность примеров: " + f"{quality:.3f}"
                               + " (это не точность распознавания)" if quality is not None
-                              else "Шаблон звучания сохранён без Vosk")
+                              else "Образец записан в игровом формате PTT")
                     )
                     self.accept.configure(state="disabled")
         except queue.Empty:
