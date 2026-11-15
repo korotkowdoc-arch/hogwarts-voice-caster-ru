@@ -75,8 +75,13 @@ def install_source(stage: Path, root: Path, *, verify=None) -> Path:
                            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         return backup
     except BaseException:
+        # Restore BOTH the installed app and the staged candidate. A failed
+        # smoke test must never leave the user unable to retry the update.
         if original.exists():
-            shutil.rmtree(original,ignore_errors=True)
+            new.parent.mkdir(parents=True,exist_ok=True)
+            if new.exists():
+                shutil.rmtree(new)
+            shutil.move(str(original),str(new))
         shutil.move(str(saved),str(original))
         raise
 
