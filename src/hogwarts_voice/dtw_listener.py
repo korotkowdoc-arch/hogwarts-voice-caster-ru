@@ -15,6 +15,7 @@ import time
 from .bridge import SpellBridge
 from .dtw_voice import DTWBank, MIN_SCORE, MIN_MARGIN
 from .vad import AdaptiveSpeechSegmenter
+from .ptt import PushToTalkCapture, key_code
 from .windows import KeyboardState, VK_F9, down, game_focused, foreground_process_name
 
 def run(args, cfg):
@@ -53,7 +54,17 @@ def run(args, cfg):
     last_mod_ready = None
     block_ms = cfg.get("block_ms", 20)
     frames = round(block_ms * 16000 / 1000)
+    ptt_mode = bool(cfg.get("push_to_talk", True))
+    try:
+        ptt_name = cfg.get("ptt_key", "F9")
+        ptt_vk = key_code(ptt_name) if ptt_mode else None
+    except ValueError as exc:
+        print(f"[setup] {exc}", flush=True)
+        return 2
+    recorder = PushToTalkCapture()
     segmenter = AdaptiveSpeechSegmenter(silence_ms=170, min_speech_ms=170)
+    ptt_was_pressed = False
+    ptt_pressed_at = 0.0
     mic = cfg.get("mic_device")
     dry_run = bool(args.dry_run)
     require_focus = bool(cfg.get("require_game_focus", True))
@@ -65,6 +76,39 @@ def run(args, cfg):
     max_mic_rms = 0
     last_spell = None
     last_spell_at = float("-inf")
+
+    def submit_phrase(phrase, *, released, began):
+        # A held-key recording bypasses both VAD and silence endpointing.
+        # One submission per release, with the same strict acoustic checks.
+        nonlocal waiting
+        if waiting >= 2:
+            print("[asr] busy; cannot queue another phrase", flush=True)
+            return
+        waiting += 1
+        task_tag = tag
+        started_at = time.monotonic()
+
+        def analyze(pcm=phrase):
+            ranking = bank.rank(pcm)
+            if not ranking:
+                return None, 0.0, "empty model", [], 0.0
+            top_spell, best = ranking[0]
+            runner = ranking[1][1] if len(ranking) > 1 else -1.0
+            if best < threshold:
+                chosen, reason = None, "low similarity"
+            elif best - runner < margin:
+                chosen, reason = None, "ambiguous"
+            else:
+                chosen, reason = top_spell, "matched"
+            return chosen, float(best), reason, ranking, (
+                time.monotonic() - started_at
+            ) * 1000
+
+        task = executor.submit(analyze)
+        task.add_done_callback(
+            lambda fut, session=task_tag, onset=began, recorded=released:
+                results.put((session, fut, onset, recorded))
+        )
 
     def callback(indata, count, timing, status):
         if status and cfg.get("verbose", False):
@@ -86,6 +130,14 @@ def run(args, cfg):
         print(f"[mode] {'TEST - no game casting' if dry_run else 'GAME'}", flush=True)
         print("[help] F8 = pause. Game mode: return to Hogwarts Legacy after Start.",
               flush=True)
+        if ptt_mode:
+            print(f"[ptt] Hold {ptt_name}, speak ONE incantation, release {ptt_name} to cast.",
+                  flush=True)
+            print("[ptt] Detection by silence is OFF. Nothing casts while the key is held.",
+                  flush=True)
+        else:
+            print("[listen] Continuous listening with adaptive VAD (experimental).",
+                  flush=True)
         with sd.RawInputStream(
             samplerate=16000, blocksize=frames, channels=1, dtype="int16",
             device=mic, callback=callback
@@ -95,6 +147,7 @@ def run(args, cfg):
                 if hotkeys.update():
                     print(f"[voice] {'ON' if hotkeys.active else 'PAUSED'}", flush=True)
                     segmenter.reset()
+                    recorder.reset()
                     tag += 1
 
                 if bridge and now - last_heartbeat >= .15:
@@ -112,12 +165,13 @@ def run(args, cfg):
                 elif now - last_focus_check >= .12:
                     focus_ok = game_focused()
                     last_focus_check = now
-                enabled = hotkeys.active and focus_ok and (
-                    not cfg.get("push_to_talk", False) or down(VK_F9)
-                )
+                # PTT does NOT alter the listener's enabled state: releasing
+                # the key must not invalidate the asynchronous matching result.
+                enabled = hotkeys.active and focus_ok
                 if enabled != prev_enabled:
                     tag += 1
                     segmenter.reset()
+                    recorder.reset()
                     while not chunks.empty():
                         try:
                             chunks.get_nowait()
@@ -125,10 +179,48 @@ def run(args, cfg):
                             break
                     prev_enabled = enabled
                     if enabled:
-                        print("[focus] LISTENING", flush=True)
+                        print("[focus] LISTENING" +
+                              (f" — hold {ptt_name} to record" if ptt_mode else ""),
+                              flush=True)
                     else:
                         print(f"[focus] BLOCKED ({foreground_process_name() or 'inactive'})",
                               flush=True)
+
+                # Poll the physical key even while focus is blocked, so a
+                # re-focused game cannot record halfway through an old hold.
+                if ptt_mode:
+                    pressed = down(ptt_vk)
+                    if enabled and pressed and not ptt_was_pressed:
+                        recorder.press()
+                        ptt_pressed_at = now
+                        # Discard audio from before the actual key press.
+                        while not chunks.empty():
+                            try:
+                                chunks.get_nowait()
+                            except queue.Empty:
+                                break
+                        print(f"[ptt] RECORDING ({ptt_name} held)", flush=True)
+                    elif enabled and not pressed and ptt_was_pressed and recorder.held:
+                        # Process audio already captured up to key-up before
+                        # closing the utterance. No VAD or silence wait.
+                        while True:
+                            try:
+                                buffered, captured = chunks.get_nowait()
+                            except queue.Empty:
+                                break
+                            if ptt_pressed_at <= captured <= now:
+                                recorder.add(buffered)
+                        phrase, duration_ms, reason = recorder.release()
+                        print(f"[ptt] RELEASED: {duration_ms:.0f}ms ({reason})", flush=True)
+                        if phrase is not None:
+                            submit_phrase(phrase, released=now, began=ptt_pressed_at)
+                        else:
+                            print("[blocked] PTT phrase too short or too long; nothing sent.",
+                                  flush=True)
+                    elif not enabled and recorder.held:
+                        recorder.reset()
+                        print("[ptt] CANCELLED: lost game focus or paused", flush=True)
+                    ptt_was_pressed = pressed
 
                 while not results.empty():
                     task_tag, future, started, captured = results.get_nowait()
@@ -163,9 +255,11 @@ def run(args, cfg):
                     dispatch = time.monotonic()
                     last_spell = selected
                     last_spell_at = dispatch
+                    first_metric = "release-to-dispatch" if ptt_mode else "last-audio-to-dispatch"
+                    second_metric = "press-to-dispatch" if ptt_mode else "speech-onset-to-dispatch~"
                     print(f"[{reason}] {selected} | score={score:.3f} | "
-                          f"last-audio-to-dispatch={max(0,(dispatch-captured)*1000):.1f}ms, "
-                          f"speech-onset-to-dispatch~={max(0,(dispatch-started)*1000):.0f}ms",
+                          f"{first_metric}={max(0,(dispatch-captured)*1000):.1f}ms, "
+                          f"{second_metric}={max(0,(dispatch-started)*1000):.0f}ms",
                           flush=True)
 
                 try:
@@ -181,42 +275,19 @@ def run(args, cfg):
                         max_mic_rms = 0
                         last_mic_report = captured
 
+                if ptt_mode:
+                    if recorder.held and captured >= ptt_pressed_at:
+                        recorder.add(chunk)
+                    continue
+
                 phrase = segmenter.feed(chunk)
                 if phrase is None:
                     continue
-                if waiting >= 2:
-                    print("[asr] busy, dropped a spoken phrase to avoid latency", flush=True)
-                    continue
-                waiting += 1
-                task_tag = tag
                 duration = len(phrase) / 32000
                 if cfg.get("mic_diagnostics", True):
                     print(f"[segment] complete utterance: {duration*1000:.0f}ms", flush=True)
-                # Approximation: includes pre-roll and tail silence.
-                began = captured - duration
-                started_at = time.monotonic()
-
-                def analyze(pcm=phrase):
-                    ranking = bank.rank(pcm)
-                    if not ranking:
-                        return None, 0.0, "empty model", [], 0.0
-                    top_spell, best = ranking[0]
-                    runner = ranking[1][1] if len(ranking)>1 else -1.0
-                    if best < threshold:
-                        chosen, reason = None, "low similarity"
-                    elif best-runner < margin:
-                        chosen, reason = None, "ambiguous"
-                    else:
-                        chosen, reason = top_spell, "matched"
-                    return chosen, float(best), reason, ranking, (
-                        time.monotonic() - started_at
-                    ) * 1000
-
-                task = executor.submit(analyze)
-                task.add_done_callback(
-                    lambda fut, session=task_tag, onset=began, recorded=captured:
-                        results.put((session, fut, onset, recorded))
-                )
+                # Approximation in free-listening mode: includes pre-roll and tail silence.
+                submit_phrase(phrase, released=captured, began=captured-duration)
     except KeyboardInterrupt:
         print("[stop] stopped", flush=True)
         return 0
