@@ -53,6 +53,16 @@ class ProviderTests(unittest.TestCase):
         with self.assertRaises(NoFreeProvider):
             router.complete([{"role":"user","content":"hello"}])
 
+    def test_gemini_json_object_requests_mime_and_validates(self):
+        seen=[]
+        def transport(request,timeout):
+            seen.append(json.loads(request.data))
+            return MockResponse({"candidates":[{"content":{"parts":[{"text":'{"spoken":"Привет"}'}]}}]})
+        router=FreeRouter(DailyBudget(self.path,{"gemini":2,"groq":1}),transport,self.keys)
+        reply=router.complete([{"role":"user","content":"json"}],output_format="json_object")
+        self.assertEqual(json.loads(reply.text),{"spoken":"Привет"})
+        self.assertEqual(seen[0]["generationConfig"]["responseMimeType"],"application/json")
+
     def test_free_model_allowlist_fixed(self):
         self.assertEqual(set(PROVIDERS),{"gemini","groq"})
         self.assertEqual(PROVIDERS["groq"]["model"],"openai/gpt-oss-20b")
