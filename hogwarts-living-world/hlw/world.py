@@ -18,6 +18,8 @@ EVENTS = {
     "meeting_attended": (12, 8),
     "meeting_missed": (-10, -8),
     "probe_ping": (0, 0),
+    "secret_kept": (8, 6),
+    "secret_revealed_to_ominis": (-12, -16),
 }
 
 def safe_id(value: str) -> str:
@@ -77,6 +79,8 @@ class World:
         safe_id(event_id)
         if kind not in EVENTS:
             raise ValueError("Unknown event type; allowed: " + ", ".join(EVENTS))
+        if kind in ("secret_kept","secret_revealed_to_ominis") and npc != "sebastian":
+            raise ValueError("Sebastian-specific event cannot be applied to another NPC")
         da, dt = EVENTS[kind]
         now = int(time.time())
         if kind == "probe_ping":
@@ -128,6 +132,21 @@ class World:
                             "story":"first_invitation",
                             "summary":"The NPC would like to meet the player.",
                             "requires_game_adapter":True},now)
+                if kind == "secret_revealed_to_ominis":
+                    # Small, deterministic social ripple: one disclosure affects
+                    # both characters. Absolutely no changes in the actual game.
+                    other = self.snapshot(player,"ominis")
+                    other_affinity = max(-100,min(100,other["affinity"]+4))
+                    other_trust = max(-100,min(100,other["trust"]+8))
+                    self.db.execute(
+                        "INSERT INTO relations(player,npc,affinity,trust,updated) VALUES(?,?,?,?,?) "
+                        "ON CONFLICT(player,npc) DO UPDATE SET affinity=excluded.affinity,trust=excluded.trust,updated=excluded.updated",
+                        (player,"ominis",other_affinity,other_trust,now))
+                    self._enqueue_once(player,"ominis","learned_sebastian_secret",
+                        "social_reaction_proposal",
+                        {"reason":"player_disclosed_sebastian_secret",
+                         "consequence":"ominis_wants_to_discuss_sebastian",
+                         "requires_game_adapter":True},now)
                 if kind == "meeting_accepted":
                     location = {"sebastian":"Undercroft","ominis":"Hogwarts courtyard",
                                 "poppy":"Beasts classroom"}.get(npc)
