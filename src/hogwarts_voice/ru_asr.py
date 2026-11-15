@@ -158,3 +158,37 @@ class RussianASR:
         stream.accept_waveform(16000, padded)
         self.recognizer.decode_stream(stream)
         return str(stream.result.text).strip()
+
+
+# Optional alternative decoder: NeMo transducer GigaAM v2.
+# Although sherpa advertises simulated streaming use, the API here is an
+# OFFLINE transducer. Compare latency on the actual CPU before enabling.
+TRANSDUCER_FILES=("encoder.int8.onnx","decoder.onnx","joiner.onnx","tokens.txt")
+
+def transducer_directory() -> Path:
+    return model_directory().parent / "gigaam-v2-ru-rnnt-int8"
+
+class RussianTransducerASR(RussianASR):
+    def __init__(self, *, model_dir=None, num_threads=4, recognizer=None):
+        self.model_dir=Path(model_dir or transducer_directory())
+        self.num_threads=num_threads
+        if recognizer is not None:
+            self.recognizer=recognizer
+            return
+        if not all((self.model_dir/name).is_file()
+                   for name in TRANSDUCER_FILES):
+            raise FileNotFoundError(
+                "Экспериментальный GigaAM Transducer не установлен. "
+                "Открой «Производительность» → «Установить модель»."
+            )
+        if (self.model_dir/"encoder.int8.onnx").stat().st_size<150_000_000:
+            raise ValueError("Transducer encoder is incomplete")
+        import sherpa_onnx
+        self.recognizer=sherpa_onnx.OfflineRecognizer.from_transducer(
+            encoder=str(self.model_dir/"encoder.int8.onnx"),
+            decoder=str(self.model_dir/"decoder.onnx"),
+            joiner=str(self.model_dir/"joiner.onnx"),
+            tokens=str(self.model_dir/"tokens.txt"),
+            num_threads=num_threads, sample_rate=16000, feature_dim=80,
+            provider="cpu", model_type="nemo_transducer", debug=False,
+        )
