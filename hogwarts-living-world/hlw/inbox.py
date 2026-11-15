@@ -36,7 +36,28 @@ class GameEventInbox:
             for _ in range(min(100,max(1,int(limit)))):
                 start=handle.tell()
                 line=handle.readline(16385)
-                if not line or not line.endswith(b"\n"):
+                if not line:
+                    break
+                if len(line)>16384 and not line.endswith(b"\n"):
+                    # Consume one oversized *complete* record without loading
+                    # unbounded untrusted data into memory. Incomplete records
+                    # are retried when the producer finishes writing them.
+                    completed=False
+                    for _chunk in range(128):
+                        rest=handle.readline(16385)
+                        if not rest:
+                            break
+                        if rest.endswith(b"\n"):
+                            completed=True
+                            break
+                    if not completed:
+                        handle.seek(start)
+                        break
+                    counters["rejected"]+=1
+                    offset=handle.tell()
+                    self.world.store_source_offset(source,offset)
+                    continue
+                if not line.endswith(b"\n"):
                     break  # Incomplete line: wait for the producer to finish.
                 end=handle.tell()
                 try:
