@@ -11,6 +11,10 @@ import re
 import unicodedata
 from pathlib import Path
 import numpy as np
+from .voice_presets import (
+    DEFAULT_STYLE, STYLE_ROSMEN, spoken_aliases, visible_name,
+    validate_style, is_book_mode_literal_exception,
+)
 
 MODEL_NAME = "gigaam-v2-ru-ctc-int8"
 MODEL_FILE = "model.int8.onnx"
@@ -56,12 +60,13 @@ def _edit_distance(a: str, b: str) -> int:
     return prev[-1]
 
 def match_incantation(text: str, spellbook: dict[str, list[str]],
-                      enabled=None):
+                      enabled=None, *, style: str = "original"):
     """Return (spell|None, status) with NO casts for unknown/ambiguous text.
 
     Unlike a closed-vocabulary ASR decoder, the neural text is never forced
     to pick a spell: empty and unrelated words are rejected.
     """
+    validate_style(style)
     heard = normalized(text)
     if not heard or len(heard) > 42:
         return None, "empty or excessively long transcript"
@@ -70,16 +75,22 @@ def match_incantation(text: str, spellbook: dict[str, list[str]],
     for spell, aliases in spellbook.items():
         if spell not in allowed:
             continue
-        forms = set(aliases) | set(EXTRA_PRONUNCIATIONS.get(spell, ()))
+        forms = spoken_aliases(spell,
+            set(aliases) | set(EXTRA_PRONUNCIATIONS.get(spell, ())), style)
         for alias in forms:
             target = normalized(alias)
-            if not target or target in UNSAFE_GENERIC_ALIASES:
+            book_exception = is_book_mode_literal_exception(spell, target, style)
+            if not target or (target in UNSAFE_GENERIC_ALIASES and not book_exception):
                 continue
             if heard == target:
                 candidates.append((spell, "exact"))
-            # Only very long distinctive fantasy names may have one typo.
-            # Short words like "Lumos" and "Accio" require an explicit alias.
-            elif len(target) >= 9 and len(heard) >= 9 and _edit_distance(heard,target) == 1:
+            # The special book-style phrases must match EXACTLY. Otherwise
+            # a normal word such as "остолбенеть" may accidentally cast.
+            elif (not book_exception
+                  and not (style == STYLE_ROSMEN
+                           and target == normalized(visible_name(spell, style)))
+                  and len(target) >= 9 and len(heard) >= 9
+                  and _edit_distance(heard, target) == 1):
                 candidates.append((spell, "one character different"))
     spells = {name for name, _ in candidates}
     if len(spells) == 1:

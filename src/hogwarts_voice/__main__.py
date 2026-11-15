@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from .bridge import SpellBridge
+from .game_commands import to_game_command
 from .latency import AudioDelayMeter
 from .template_voice import PronunciationBank, SpeechSegmenter
 from .recognition_policy import route_spells
@@ -67,14 +68,19 @@ def main():
         return 2
 
     if args.send:
+        try:
+            game_name = to_game_command(args.send)
+        except ValueError as exc:
+            print(f"Invalid game command: {exc}", file=sys.stderr)
+            return 2
         bridge = SpellBridge().connect()
         try:
             deadline = time.monotonic() + 2
             while not bridge.alive() and time.monotonic() < deadline:
                 time.sleep(.08)
                 bridge.poll()
-            ok, reason = bridge.send(args.send)
-            print(f"{args.send}: {reason}")
+            ok, reason = bridge.send(game_name)
+            print(f"{args.send} -> {game_name}: {reason} (IPC only, not confirmed cast)")
             return 0 if ok else 1
         finally:
             bridge.close()

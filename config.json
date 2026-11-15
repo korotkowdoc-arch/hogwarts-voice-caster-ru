@@ -26,5 +26,6 @@
     "Lumos",
     "Accio"
   ],
-  "asr_threads": 4
+  "asr_threads": 4,
+  "voice_style": "rosmen"
 }

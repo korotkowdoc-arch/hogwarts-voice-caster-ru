@@ -15,6 +15,8 @@ from .ptt import PushToTalkCapture, key_code
 from .ru_asr import RussianASR, load_spell_aliases, match_incantation, DEFAULT_ENABLED
 from .vad import AdaptiveSpeechSegmenter
 from .windows import KeyboardState, down, game_focused, foreground_process_name
+from .voice_presets import DEFAULT_STYLE, validate_style, STYLE_LABELS
+from .game_commands import to_game_command
 
 def run(args, cfg):
     try:
@@ -35,6 +37,11 @@ def run(args, cfg):
         return 2
 
     spellbook = load_spell_aliases()
+    try:
+        voice_style = validate_style(cfg.get("voice_style", DEFAULT_STYLE))
+    except ValueError as exc:
+        print(f"[setup] {exc}", flush=True)
+        return 2
     game_allowed = cfg.get("enabled_spells", list(DEFAULT_ENABLED))
     if not isinstance(game_allowed, list) or not all(
         isinstance(item, str) and item in spellbook for item in game_allowed
@@ -46,6 +53,7 @@ def run(args, cfg):
     dry_run = bool(args.dry_run)
     allowed = list(spellbook) if dry_run else game_allowed
     print("[engine] Russian GigaAM v2 ready. No voice samples needed.", flush=True)
+    print(f"[style] {STYLE_LABELS[voice_style]}", flush=True)
     if dry_run:
         print(f"[allowed] TEST: all {len(allowed)} known incantations; "
               "none are sent to the game.", flush=True)
@@ -216,7 +224,9 @@ def run(args, cfg):
                     except Exception as exc:
                         print(f"[asr] Decoding error: {exc}", flush=True)
                         continue
-                    spell, reason = match_incantation(transcript, spellbook, allowed)
+                    spell, reason = match_incantation(
+                        transcript, spellbook, allowed, style=voice_style
+                    )
                     print(f"[heard] {transcript or '(silence)'}", flush=True)
                     elapsed_ms = (time.monotonic() - submitted) * 1000
                     print(f"[asr] GigaAM decoded in {elapsed_ms:.0f}ms; match={reason}",
@@ -231,17 +241,26 @@ def run(args, cfg):
                     if focus_required and not game_focused():
                         print(f"[blocked] {spell}: game lost focus", flush=True)
                         continue
+                    try:
+                        game_command = to_game_command(spell)
+                    except ValueError as exc:
+                        print(f"[blocked] {exc}; nothing sent.", flush=True)
+                        continue
                     if dry_run:
                         ok, result = True, "TEST"
                     else:
-                        ok, result = bridge.send(spell)
+                        ok, result = bridge.send(game_command)
                     if ok:
                         last_sent_spell = spell
                         last_sent_at = now
-                    print(f"[{result}] {spell} | release-to-dispatch="
+                    print(f"[{result}] {spell} -> {game_command} | release-to-dispatch="
                           f"{(time.monotonic()-released)*1000:.0f}ms; "
                           f"press-to-dispatch={(time.monotonic()-started)*1000:.0f}ms",
                           flush=True)
+                    if ok and not dry_run:
+                        print("[ipc] Command queued, not proof that the game cast it. "
+                              "If no effect, check spell target/context and UE4SS.log.",
+                              flush=True)
 
                 try:
                     captured, audio = chunks.get(timeout=.025)
