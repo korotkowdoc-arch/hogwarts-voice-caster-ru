@@ -76,8 +76,12 @@ class FreeRouter:
     def configured(self) -> list[str]:
         return [p for p in PROVIDERS if self.keys.get(PROVIDERS[p]["env"])]
 
-    def complete(self, messages: list[dict], *, max_tokens: int = 250) -> Completion:
-        max_tokens = min(600, max(1, int(max_tokens)))
+    def complete(self, messages: list[dict], *, max_tokens: int = 250, output_format: str = "text") -> Completion:
+        max_tokens = min(1600, max(1, int(max_tokens)))
+        if output_format not in ("text","json_object"):
+            raise ValueError("Unsupported output_format")
+        if output_format == "json_object":
+            messages = [{"role":"system","content":"Return exactly one valid JSON object, no code fences or commentary."}] + messages
         for provider, details in PROVIDERS.items():
             key = self.keys.get(details["env"])
             if not key or self.cooldown_until.get(provider, 0) > time.monotonic():
@@ -85,8 +89,14 @@ class FreeRouter:
             if not self.budget.consume(provider):
                 continue
             try:
-                text = self._gemini(messages, key, max_tokens) if provider == "gemini" else self._groq(messages, key, max_tokens)
+                text = self._gemini(messages, key, max_tokens, output_format) if provider == "gemini" else self._groq(messages, key, max_tokens, output_format)
                 if text.strip():
+                    if output_format == "json_object":
+                        try:
+                            if not isinstance(json.loads(text), dict):
+                                continue
+                        except ValueError:
+                            continue
                     return Completion(text.strip(), provider, details["model"])
             except ProviderError as exc:
                 self.cooldown_until[provider] = time.monotonic() + (300 if exc.code == "429" else 45)
@@ -108,7 +118,7 @@ class FreeRouter:
         except (TimeoutError, URLError, ValueError, OSError) as exc:
             raise ProviderError(provider, "network_or_payload_error") from exc
 
-    def _gemini(self, messages: list[dict], key: str, max_tokens: int) -> str:
+    def _gemini(self, messages: list[dict], key: str, max_tokens: int, output_format: str = "text") -> str:
         system = "\n".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
         contents = []
         for msg in messages:
@@ -120,6 +130,8 @@ class FreeRouter:
         if not contents:
             contents = [{"role": "user", "parts": [{"text": "Привет."}]}]
         payload = {"contents": contents, "generationConfig": {"maxOutputTokens": max_tokens}}
+        if output_format == "json_object":
+            payload["generationConfig"]["responseMimeType"] = "application/json"
         if system:
             payload["systemInstruction"] = {"parts": [{"text": system}]}
         data = self._send("gemini", key, payload)
@@ -128,9 +140,11 @@ class FreeRouter:
         except (KeyError, TypeError, IndexError) as exc:
             raise ProviderError("gemini", "empty_answer") from exc
 
-    def _groq(self, messages: list[dict], key: str, max_tokens: int) -> str:
+    def _groq(self, messages: list[dict], key: str, max_tokens: int, output_format: str = "text") -> str:
         payload = {"model": PROVIDERS["groq"]["model"], "messages": messages,
                    "max_completion_tokens": max_tokens, "temperature": 0.7, "stream": False}
+        if output_format == "json_object":
+            payload["response_format"] = {"type":"json_object"}
         data = self._send("groq", key, payload)
         try:
             return data["choices"][0]["message"]["content"] or ""
