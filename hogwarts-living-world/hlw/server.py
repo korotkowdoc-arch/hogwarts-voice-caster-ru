@@ -13,6 +13,7 @@ from . import __version__
 from .providers import DailyBudget, FreeRouter, NoFreeProvider
 from .world import World
 from .compat import normalize_messages, response_type, extract_context, CompatibilityError
+from .inbox import GameEventInbox
 
 def data_dir() -> Path:
     root = os.environ.get("HLW_DATA_DIR")
@@ -27,6 +28,10 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
     router = router or FreeRouter(DailyBudget(directory / "daily_counts.json",
                                             {"gemini": 120, "groq": 300}))
     bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
+    watch_events = os.environ.get("HLW_WATCH_EVENTS", "0") == "1"
+    inbox = GameEventInbox(directory / "game-events.jsonl",world) if watch_events else None
+    if inbox:
+        inbox.start()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "HogwartsLivingWorld/" + __version__
@@ -65,7 +70,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                     return self._answer(200,{"version":__version__,"mode":"cloud_free_only",
                                              "configured_providers":router.configured,"world":"ready",
                                              "sonorus":"openai_compatible_chat_completions_beta",
-                                             "text_only":True,"game_hooks_installed":False})
+                                             "text_only":True,"game_hooks_installed":False,
+                                             "game_event_file_inbox":watch_events})
                 if url.path == "/v1/models":
                     return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
                 if url.path == "/v1/world/outbox":
@@ -137,7 +143,11 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                      "No free provider response. No paid fallback. NPC and save data unchanged."}})
             except (KeyError,ValueError,TypeError,json.JSONDecodeError) as exc:
                 return self._answer(400,{"error":"bad_request","message":str(exc)})
-    Handler.close_storage = world.db.close
+    def close_storage():
+        if inbox:
+            inbox.stop()
+        world.db.close()
+    Handler.close_storage = staticmethod(close_storage)
     return Handler
 
 def main():
