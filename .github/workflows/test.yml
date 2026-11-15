@@ -58,3 +58,9 @@ jobs:
         env:
           PYTHONPATH: src
         run: python -c "from hogwarts_voice.ui import App, Wizard; print('GUI imports OK')"
+
+      - name: Smoke-test actual desktop window construction
+        if: runner.os == 'Windows'
+        env:
+          PYTHONPATH: src
+        run: python -c "from hogwarts_voice.ui import App; a=App(); a.update_idletasks(); a.update(); a.destroy(); print('GUI window created successfully')"
