@@ -1,8 +1,5 @@
-"""Windows desktop regression test for Tkinter method shadowing.
-
-Run after installing UI dependencies, with PYTHONPATH=src.
-"""
-from hogwarts_voice.ui import App, Wizard
+"""Real Windows desktop test: one app window, wizard embedded as a page."""
+from hogwarts_voice.ui import App
 
 app = App()
 try:
@@ -11,20 +8,37 @@ try:
     assert callable(app.state), "App.state() was overwritten by a widget"
     assert app.state() in {"normal", "zoomed", "iconic", "withdrawn"}
     app.set_status("Smoke test")
-    app.draw_home()
+
+    # Opening training should never spawn a second taskbar window.
+    app.open_wizard()
     app.update()
-    assert callable(app.state), "Main view has overwritten Tk state()"
-    wizard = Wizard(app)
-    app.wizard = wizard
-    wizard.win.update_idletasks()
-    wizard.win.update()
+    assert app._active_page == "training"
+    assert app.wizard is not None
+    wizard = app.wizard
+    assert wizard.win.winfo_toplevel() is app
+    assert len(app.winfo_children()) == 2, "Unexpected root-level window"
     wizard.next()
     wizard.win.update()
     wizard.prev()
     wizard.win.update()
+
+    # Worker logs arriving while training must not crash on destroyed homepage.
+    app.log("[TEST] Accio")
+    app.set_status("Testing")
     wizard.finish()
     app.update()
-    assert callable(app.state), "Wizard has overwritten Tk state()"
-    print("[OK] Desktop main window, refresh, wizard and navigation")
+    assert app._active_page == "home"
+    assert app.wizard is None
+    assert "[TEST] Accio" in app.logbox.get("1.0", "end")
+
+    # Sidebar navigation both ways must also keep a single main window.
+    app.open_wizard()
+    app.update()
+    app.draw_home()
+    app.update()
+    assert app.wizard is None
+    assert app._active_page == "home"
+    assert callable(app.state)
+    print("[OK] Embedded training page; navigation; logs; no extra window")
 finally:
     app.destroy()

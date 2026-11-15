@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections import deque
 import os
 from pathlib import Path
 import queue
@@ -85,8 +86,8 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Hogwarts Voice Caster — RU")
-        self.geometry("1080x765")
-        self.minsize(890, 670)
+        self.geometry("1100x730")
+        self.minsize(1000, 640)
         self.configure(fg_color=BASE)
 
         self.config_data = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
@@ -95,12 +96,14 @@ class App(ctk.CTk):
         self.events = queue.Queue()
         self.proc = None
         self.wizard = None
+        self._active_page = "home"
+        self._log_history = deque(maxlen=200)
         self._closed = False
         self._proc_generation = 0
 
         self.grid_columnconfigure(1, weight=1)
         self.grid_rowconfigure(0, weight=1)
-        self.sidebar = ctk.CTkFrame(self, width=250, corner_radius=0, fg_color=SIDE)
+        self.sidebar = ctk.CTkFrame(self, width=230, corner_radius=0, fg_color=SIDE)
         self.sidebar.grid(row=0, column=0, sticky="nsew")
         self.sidebar.grid_propagate(False)
         self.content = ctk.CTkFrame(self, corner_radius=0, fg_color=BASE)
@@ -126,7 +129,7 @@ class App(ctk.CTk):
 
         self.sidebar_stats = text(s, "", size=11, wraplength=210)
         self.sidebar_stats.pack(side="bottom", padx=24, pady=(0, 28), anchor="w")
-        text(s, "HVC  /  v0.4", size=12, color=GOLD).pack(side="bottom", padx=24,
+        text(s, "HVC  /  v0.6", size=12, color=GOLD).pack(side="bottom", padx=24,
                                                          pady=(0, 8), anchor="w")
         self.update_icon_count()
 
@@ -149,7 +152,17 @@ class App(ctk.CTk):
         )
 
     def draw_home(self):
+        # The training wizard is an embedded page, not a top-level dialog.
+        if self.wizard is not None and self.wizard.win.winfo_exists():
+            if self.wizard.busy:
+                self.wizard.notice.configure(
+                    text="Сейчас идёт запись. Дождись её окончания перед переходом.",
+                    text_color=GOLD,
+                )
+                return
+            self.wizard = None
         self.clear_content()
+        self._active_page = "home"
         body = ctk.CTkFrame(self.content, fg_color="transparent")
         body.pack(fill="both", expand=True, padx=35, pady=28)
 
@@ -237,6 +250,8 @@ class App(ctk.CTk):
             font=ctk.CTkFont(family="Consolas",size=11), wrap="word")
         self.logbox.pack(fill="both", expand=True, padx=16, pady=(0,15))
         self.logbox.insert("end", "Здесь появятся распознанные заклинания и замеры задержки.\n")
+        for line in self._log_history:
+            self.logbox.insert("end", line + "\n")
         self.logbox.configure(state="disabled")
         if self.proc and self.proc.poll() is None:
             self.set_status("● РАСПОЗНАВАНИЕ АКТИВНО", GOLD)
@@ -258,14 +273,21 @@ class App(ctk.CTk):
         self.log("Режим изменён. При следующем запуске он вступит в силу.")
 
     def set_status(self, value, color=GREEN):
-        if hasattr(self,"state"):
-            self.status_label.configure(text=value,text_color=color)
+        # Main-page widgets do not exist while viewing the training section.
+        if (self._active_page == "home" and hasattr(self, "status_label")
+                and self.status_label.winfo_exists()):
+            self.status_label.configure(text=value, text_color=color)
 
     def log(self, line):
-        if not hasattr(self,"logbox"):
+        # Keep worker output while the user is practising incantations;
+        # it will reappear when navigating back to the main page.
+        line = line.rstrip()
+        self._log_history.append(line)
+        if (self._active_page != "home" or not hasattr(self, "logbox")
+                or not self.logbox.winfo_exists()):
             return
         self.logbox.configure(state="normal")
-        self.logbox.insert("end", line.rstrip()+"\n")
+        self.logbox.insert("end", line + "\n")
         self.logbox.see("end")
         if int(self.logbox.index("end-1c").split(".")[0]) > 260:
             self.logbox.delete("1.0", "40.0")
@@ -342,10 +364,10 @@ class App(ctk.CTk):
         self.after(125, self.pump)
 
     def open_wizard(self):
-        if self.wizard and self.wizard.win.winfo_exists():
-            self.wizard.win.lift()
-            self.wizard.win.focus_set()
-            return
+        if self.wizard is not None and self.wizard.win.winfo_exists():
+            return  # Already on this page — never create a separate window.
+        self.clear_content()
+        self._active_page = "training"
         self.wizard = Wizard(self)
 
     def import_icons(self):
@@ -367,9 +389,10 @@ class App(ctk.CTk):
             return
         self.update_icon_count()
         self.log(f"Импортировано игровых иконок: {len(found)}.")
-        if self.wizard and self.wizard.win.winfo_exists():
+        if self.wizard is not None and self.wizard.win.winfo_exists():
             self.wizard.draw()
-        self.draw_home()
+        else:
+            self.draw_home()
         messagebox.showinfo("Готово",f"Загружено {len(found)} иконок.\n"
                             "Они останутся на этом ПК и будут доступны офлайн.",
                             parent=self)
@@ -389,15 +412,11 @@ class Wizard:
         self.busy = False
         self.model = None
         self.events = queue.Queue()
-        self.win = ctk.CTkToplevel(app)
-        self.win.title("Обучение звучанию заклинаний — Hogwarts Voice Caster")
-        self.win.geometry("1010x700")
-        self.win.minsize(850,620)
-        self.win.configure(fg_color=BASE)
-        self.win.protocol("WM_DELETE_WINDOW", self.finish)
-
-        root = ctk.CTkFrame(self.win, fg_color="transparent")
-        root.pack(fill="both",expand=True,padx=25,pady=25)
+        # Render inside the existing app content area (one Windows taskbar item).
+        self.win = ctk.CTkFrame(app.content, fg_color=BASE, corner_radius=0)
+        self.win.pack(fill="both", expand=True)
+        root = ctk.CTkScrollableFrame(self.win, fg_color="transparent")
+        root.pack(fill="both", expand=True, padx=17, pady=16)
         root.grid_columnconfigure(0,weight=1,uniform="wiz")
         root.grid_columnconfigure(1,weight=1,uniform="wiz")
         root.grid_rowconfigure(1,weight=1)
@@ -571,7 +590,7 @@ class Wizard:
             profile.add_alias(self.spell,self.last_heard,self.app.book)
             profile.save()
         except ValueError as exc:
-            messagebox.showwarning("Нельзя сохранить",str(exc),parent=self.win)
+            messagebox.showwarning("Нельзя сохранить",str(exc),parent=self.app)
         else:
             self.notice.configure(text="Вариант добавлен в личный словарь.",text_color=GREEN)
             self.accept.configure(state="disabled")
@@ -580,8 +599,7 @@ class Wizard:
         if self.busy:
             messagebox.showinfo("Запись", "Дождись окончания записи.",parent=self.win)
             return
-        self.win.destroy()
-        self.app.wizard=None
+        self.app.draw_home()
 
 def main():
     App().mainloop()
