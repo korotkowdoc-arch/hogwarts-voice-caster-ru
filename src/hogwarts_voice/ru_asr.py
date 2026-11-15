@@ -110,6 +110,11 @@ def load_spell_aliases(path: Path | None = None):
         data = json.load(handle)
     if not isinstance(data, dict):
         raise ValueError("spells.json must be an object")
+    # Preserve user-edited aliases and introduce new supported game actions
+    # without forcing old installations to replace their spells.json.
+    from .spellbook import DEFAULT_SPELLS as BUILTIN_SPELLS
+    for command, aliases in BUILTIN_SPELLS.items():
+        data.setdefault(command, list(aliases))
     return data
 
 class RussianASR:

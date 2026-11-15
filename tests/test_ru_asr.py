@@ -1,5 +1,7 @@
 """No game, model weights or microphone required for strict routing tests."""
 import json
+import tempfile
+from pathlib import Path
 import unittest
 import numpy as np
 
@@ -24,6 +26,20 @@ class NeuralASRTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.book=load_spell_aliases()
+
+    def test_old_spells_json_keeps_aliases_and_gets_new_actions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            file = Path(folder) / "spells.json"
+            file.write_text(json.dumps(
+                {"Lumos": ["светлячок"], "Accio": ["акцио"]},
+                ensure_ascii=False), encoding="utf-8")
+            upgraded = load_spell_aliases(file)
+            self.assertIn("Alohomora", upgraded)
+            self.assertIn("Map", upgraded)
+            self.assertIn("Finite", upgraded)
+            self.assertEqual(upgraded["Lumos"], ["светлячок"])
+            self.assertEqual(json.loads(file.read_text(encoding="utf-8")),
+                             {"Lumos": ["светлячок"], "Accio": ["акцио"]})
 
     def test_lumos_is_exact(self):
         self.assertEqual(match_incantation("Люмос!", self.book)[0], "Lumos")

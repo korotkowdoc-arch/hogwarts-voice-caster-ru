@@ -21,7 +21,7 @@ from .silence_mod import (
     install_nonverbal, set_nonverbal_enabled, nonverbal_status,
 )
 from .icon_assets import SOURCE_PAGE, count_icons, has_icon, icon_file, import_zip
-from .spellbook import Spellbook
+from .spellbook import Spellbook, DEFAULT_SPELLS as BUILTIN_SPELLS
 from .voice_profile import VoiceProfile
 from .dtw_voice import DTWBank as PronunciationBank
 from .training_capture import capture_one_hold
@@ -98,7 +98,12 @@ class App(ctk.CTk):
 
         self.config_data = json.loads(DEFAULT_CONFIG.read_text(encoding="utf-8"))
         with DEFAULT_SPELLS.open("r", encoding="utf-8") as source:
-            self.book = Spellbook(json.load(source))
+            aliases = json.load(source)
+        # Older installs may keep a custom spells.json with only 28 entries.
+        # Add new built-in actions in memory without overwriting user changes.
+        for command, words in BUILTIN_SPELLS.items():
+            aliases.setdefault(command, list(words))
+        self.book = Spellbook(aliases)
         self.events = queue.Queue()
         self.proc = None
         self.wizard = None
