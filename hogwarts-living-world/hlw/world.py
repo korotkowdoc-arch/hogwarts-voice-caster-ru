@@ -46,6 +46,9 @@ class World:
                 CREATE TABLE IF NOT EXISTS milestones (
                     player TEXT NOT NULL, npc TEXT NOT NULL, milestone TEXT NOT NULL,
                     PRIMARY KEY(player,npc,milestone));
+                CREATE TABLE IF NOT EXISTS source_offsets (
+                    source TEXT NOT NULL PRIMARY KEY, byte_offset INTEGER NOT NULL DEFAULT 0
+                );
                 CREATE TABLE IF NOT EXISTS outbox (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     player TEXT NOT NULL, npc TEXT NOT NULL, kind TEXT NOT NULL,
@@ -138,3 +141,17 @@ class World:
                 "UPDATE outbox SET status='acknowledged' WHERE player=? AND id=? AND status='pending'",
                 [(player,i) for i in ids])
             return cursor.rowcount
+
+
+    def source_offset(self, source: str) -> int:
+        with self.lock:
+            row=self.db.execute("SELECT byte_offset FROM source_offsets WHERE source=?",(source,)).fetchone()
+        return int(row["byte_offset"]) if row else 0
+
+    def store_source_offset(self, source: str, offset: int):
+        if offset < 0:
+            raise ValueError("negative offset")
+        with self.lock:
+            self.db.execute("INSERT INTO source_offsets(source,byte_offset) VALUES(?,?) "
+                            "ON CONFLICT(source) DO UPDATE SET byte_offset=excluded.byte_offset",
+                            (source,offset))
