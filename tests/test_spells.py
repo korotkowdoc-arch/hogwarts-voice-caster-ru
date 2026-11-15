@@ -50,5 +50,13 @@ class SpellbookTests(unittest.TestCase):
         gate = StreamGate(self.book, 4, 0, 0)
         self.assertEqual(gate.feed("протего", final=True, now=5.0), ["Protego"])
 
+
+class WrongGoalAliasRegressionTests(unittest.TestCase):
+    def test_accio_not_turned_into_goal_phrase(self):
+        book = Spellbook(DEFAULT_SPELLS)
+        self.assertEqual(book.parse('акцио'), ['Accio'])
+        self.assertEqual(book.parse('к цели'), [])
+        self.assertNotIn('путь к цели', book.grammar())
+
 if __name__ == "__main__":
     unittest.main()
