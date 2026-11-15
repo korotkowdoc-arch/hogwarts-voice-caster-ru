@@ -31,6 +31,7 @@ class ServerTests(unittest.TestCase):
         self.srv.shutdown()
         self.srv.server_close()
         self.t.join()
+        self.srv.RequestHandlerClass.close_storage()
         self.tmp.cleanup()
 
     def request(self,path,body=None):
@@ -77,6 +78,7 @@ class ServerTests(unittest.TestCase):
             other.shutdown()
             other.server_close()
             worker.join()
+            other.RequestHandlerClass.close_storage()
 
 if __name__=="__main__":
     unittest.main()
