@@ -13,8 +13,8 @@ GAME_PROCESSES = frozenset({
     "phoenix-win64-shipping.exe",
 })
 
-def foreground_process_name() -> str:
-    """Name of the currently focused executable, or empty if unavailable."""
+def foreground_process_path() -> str:
+    """Absolute executable path of foreground app, if Windows allows it."""
     if os.name != "nt":
         return ""
     from ctypes import wintypes
@@ -44,9 +44,14 @@ def foreground_process_name() -> str:
         size = wintypes.DWORD(len(buffer))
         if not kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
             return ""
-        return buffer.value.rsplit("\\", 1)[-1].casefold()
+        return buffer.value
     finally:
         kernel32.CloseHandle(handle)
+
+def foreground_process_name() -> str:
+    """Name of the currently focused executable, or empty if unavailable."""
+    full = foreground_process_path()
+    return full.rsplit("\\", 1)[-1].casefold() if full else ""
 
 def is_game_process(name: str) -> bool:
     return name.casefold() in GAME_PROCESSES

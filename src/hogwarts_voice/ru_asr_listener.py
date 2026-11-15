@@ -18,6 +18,8 @@ from .windows import KeyboardState, down, game_focused, foreground_process_name
 from .voice_presets import DEFAULT_STYLE, validate_style, STYLE_LABELS
 from .game_commands import to_game_command
 from .game_interactions import ACTION_IDS, interact_with_lock, validate_interact_key
+from .game_feedback import ModLogMonitor, find_log
+from .windows import foreground_process_path
 
 def run(args, cfg):
     try:
@@ -101,6 +103,8 @@ def run(args, cfg):
     awaiting = False
     last_sent_at = float("-inf")
     last_sent_spell = ""
+    mod_feedback = None
+    last_log_search = float("-inf")
 
     def on_audio(data, frame_count, audio_time, status):
         try:
@@ -171,6 +175,22 @@ def run(args, cfg):
                     segmenter.reset()
                     generation += 1
                     clear_audio()
+
+                # Only the game's own UE4SS.log may positively confirm casts.
+                # Discover it lazily when Hogwarts Legacy is foreground; no
+                # user folder selection required for most Steam/Epic installs.
+                if bridge and mod_feedback is None and now-last_log_search > 3:
+                    last_log_search = now
+                    log = find_log(cfg.get("game_folder"), foreground_process_path())
+                    if log:
+                        mod_feedback = ModLogMonitor(log)
+                        mod_feedback.begin()
+                        print(f"[game-log] Monitoring: {log}", flush=True)
+                if mod_feedback is not None:
+                    for event in mod_feedback.poll(now=now):
+                        print(f"[game:{event.state}] {event.spell} | "
+                              f"{event.detail}; elapsed={event.latency_ms}ms",
+                              flush=True)
 
                 if bridge and now-last_bridge_poll > .15:
                     bridge.poll(now=now)
@@ -285,12 +305,14 @@ def run(args, cfg):
                     if ok:
                         last_sent_spell = spell
                         last_sent_at = now
+                        if mod_feedback is not None and not dry_run:
+                            mod_feedback.record_sent(spell, game_command, now=now)
                     print(f"[{result}] {spell} -> {game_command} | release-to-dispatch="
                           f"{(time.monotonic()-released)*1000:.0f}ms; "
                           f"press-to-dispatch={(time.monotonic()-started)*1000:.0f}ms",
                           flush=True)
                     if ok and not dry_run:
-                        print("[ipc] Command queued, not proof that the game cast it. "
+                        print("[ipc] Command queued; waiting for game log confirmation. "
                               "If no effect, check spell target/context and UE4SS.log.",
                               flush=True)
 
