@@ -23,21 +23,19 @@ def run(args, cfg):
     bank = DTWBank.load()
     trained = bank.trained_spells()
     if not trained:
-        print("[setup] НЕТ ОБУЧЕННЫХ ЗАКЛИНАНИЙ. "
-              "Открой «Тренировка заклинаний» и запиши хотя бы одно слово 3 раза.",
-              flush=True)
-        print("[setup] Старая база Vosk несовместима с новым акустическим движком. "
-              "Для безопасности её образцы не переносятся.", flush=True)
+        print("[setup] NO TRAINED SPELLS. Open Spell Training and record "
+              "a spell 3 times before testing.", flush=True)
+        print("[setup] Old Vosk templates are incompatible with the new engine. "
+              "Please record new samples.", flush=True)
         return 2
     if cfg.get("speaker_verification", False):
-        print("[setup] Отдельная идентификация говорящего не включена в быстрый "
-              "акустический режим; отключи speaker_verification для продолжения.",
-              flush=True)
+        print("[setup] Speaker ID is unavailable in the fast DTW mode. "
+              "Disable speaker_verification to continue.", flush=True)
         return 2
 
-    print("[engine] LOCAL ACOUSTIC DTW — no Vosk guesses, no cloud", flush=True)
+    print("[engine] LOCAL ACOUSTIC DTW: no Vosk guesses, no cloud", flush=True)
     print(f"[engine] Trained commands: {', '.join(sorted(trained))}", flush=True)
-    print("[engine] Уверенные совпадения отправляются; неизвестные звуки блокируются.",
+    print("[engine] Only confident acoustic matches are sent; unknown sounds are blocked.",
           flush=True)
     threshold = float(cfg.get("dtw_threshold", MIN_SCORE))
     margin = float(cfg.get("dtw_margin", MIN_MARGIN))
@@ -85,7 +83,7 @@ def run(args, cfg):
         print(f"[mic] Device: {sd.query_devices(mic, 'input')['name']}", flush=True)
         if not dry_run:
             bridge = SpellBridge().connect()
-        print(f"[mode] {'TEST — no game casting' if dry_run else 'GAME'}", flush=True)
+        print(f"[mode] {'TEST - no game casting' if dry_run else 'GAME'}", flush=True)
         print("[help] F8 = pause. Game mode: return to Hogwarts Legacy after Start.",
               flush=True)
         with sd.RawInputStream(
@@ -145,8 +143,8 @@ def run(args, cfg):
                     top = ", ".join(f"{name}={value:.3f}" for name,value in rankings[:3])
                     print(f"[rank] {top} (DTW {elapsed_ms:.1f}ms)", flush=True)
                     if selected is None:
-                        print(f"[blocked] Нет уверенного заклинания: {reason} "
-                              f"(score={score:.3f}). Ничего не отправлено.",
+                        print(f"[blocked] No reliable spell: {reason} "
+                              f"(score={score:.3f}). Nothing sent.",
                               flush=True)
                         continue
                     if selected == last_spell and now - last_spell_at < (
