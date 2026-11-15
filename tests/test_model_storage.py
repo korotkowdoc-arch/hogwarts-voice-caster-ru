@@ -42,6 +42,11 @@ class ModelStorageTests(unittest.TestCase):
             self.assertTrue(model_layout_ok(destination))
             self.assertTrue(model_layout_ok(source))
 
+    def test_expected_small_russian_graph_layout(self):
+        self.assertIn("graph/Gr.fst", REQUIRED_FILES)
+        self.assertIn("graph/HCLr.fst", REQUIRED_FILES)
+        self.assertNotIn("graph/words.txt", REQUIRED_FILES)
+
     def test_incomplete_model_not_accepted(self):
         with tempfile.TemporaryDirectory() as folder:
             base = Path(folder)

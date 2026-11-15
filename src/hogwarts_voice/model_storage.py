@@ -13,7 +13,8 @@ import tempfile
 
 MODEL_NAME = "vosk-model-small-ru-0.22"
 BASE_DIR = "HogwartsVoiceCasterRU"
-REQUIRED_FILES = ("am/final.mdl", "conf/model.conf", "graph/words.txt")
+REQUIRED_FILES = ("am/final.mdl", "conf/model.conf", "conf/mfcc.conf",
+                  "graph/Gr.fst", "graph/HCLr.fst")
 
 def legacy_model_path(project_root: Path) -> Path:
     return project_root / "models" / MODEL_NAME
