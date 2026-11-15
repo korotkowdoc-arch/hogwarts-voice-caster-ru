@@ -106,6 +106,9 @@ class VoiceProfile:
         if not acceptable_alias(phrase) or spell not in book.entries:
             raise ValueError("Too short or invalid pronunciation")
         entries = {key: list(val) for key, val in book.entries.items()}
+        for saved_spell, aliases in self.aliases.items():
+            if saved_spell in entries:
+                entries[saved_spell].extend(aliases)
         entries[spell].append(phrase)
         Spellbook(entries)  # rejects ambiguous aliases
         existing = self.aliases.setdefault(spell, [])

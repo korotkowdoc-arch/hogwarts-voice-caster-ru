@@ -7,3 +7,5 @@ build/
 *.spec
 .idea/
 .vscode/
+.voice_profile.json
+voice_profile.json

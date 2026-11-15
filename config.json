@@ -8,5 +8,6 @@
   "require_game_focus": true,
   "push_to_talk": false,
   "verbose": true,
-  "grammar_mode": "constrained"
+  "grammar_mode": "constrained",
+  "speaker_threshold": 0.68
 }
