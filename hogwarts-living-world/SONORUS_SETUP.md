@@ -1,4 +1,4 @@
-# Hogwarts Living World 0.2.0 — Sonorus connection guide (beta)
+# Hogwarts Living World 0.4.0 — Sonorus connection guide (beta)
 
 **Status:** HTTP compatibility tested in CI; **NOT** yet tested in Hogwarts Legacy.
 It does not automatically patch game files or inject new quests.
