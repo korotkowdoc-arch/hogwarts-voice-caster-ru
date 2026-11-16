@@ -125,7 +125,6 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                              "last_probe":world.last_probe(),
                                              "game_integration_verified":False,
                                              "local_free_budget":budget_status(),
-                        "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False},
                                              "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False}})
                 if url.path == "/v1/models":
                     models=[{"id":"hogwarts-living-world-free","object":"model"}]
@@ -142,6 +141,7 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                         "watching_event_inbox":watch_events,
                         "key_names_present":router.configured,
                         "local_free_budget":budget_status(),
+                        "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False},
                         "data_directory":str(directory),
                         "sonorus_game_integration_verified":False
                     })
