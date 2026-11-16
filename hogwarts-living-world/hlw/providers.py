@@ -46,26 +46,54 @@ class DailyBudget:
         self.path, self.limits, self.lock = path, limits, Lock()
         path.parent.mkdir(parents=True, exist_ok=True)
 
-    def consume(self, provider: str) -> bool:
+    def _read(self) -> dict | None:
+        """Invalid budget files deny calls; never silently reset used requests."""
+        today=date.today().isoformat()
+        if not self.path.exists():
+            return {"date":today,"counts":{}}
+        try:
+            state=json.loads(self.path.read_text(encoding="utf-8"))
+            if not isinstance(state,dict) or not isinstance(state.get("counts"),dict):
+                return None
+            old_day=date.fromisoformat(state.get("date",""))
+            if old_day>date.today():
+                return None
+            if old_day<date.today():
+                return {"date":today,"counts":{}}
+            for name,count in state["counts"].items():
+                if not isinstance(name,str) or type(count) is not int or count<0:
+                    return None
+            return state
+        except (OSError,ValueError,TypeError):
+            return None
+
+    def status(self) -> dict:
         with self.lock:
-            today = date.today().isoformat()
-            try:
-                state = json.loads(self.path.read_text(encoding="utf-8"))
-                if not isinstance(state,dict) or state.get("date") != today or not isinstance(state.get("counts"),dict):
-                    state = {"date": today, "counts": {}}
-            except (OSError, ValueError, TypeError):
-                state = {"date": today, "counts": {}}
-            counts = state["counts"]
-            try:
-                used = max(0,int(counts.get(provider, 0)))
-            except (TypeError,ValueError,OverflowError):
-                used = 0
-            if used >= self.limits[provider]:
+            state=self._read()
+            if state is None:
+                return {"state":"locked_corrupt_counter","remaining":{}}
+            return {"state":"ok",
+                    "remaining":{p:max(0,limit-state["counts"].get(p,0))
+                                 for p,limit in self.limits.items()},
+                    "limits":dict(self.limits)}
+
+    def consume(self, provider: str) -> bool:
+        if provider not in self.limits:
+            return False
+        with self.lock:
+            state=self._read()
+            if state is None:
                 return False
-            counts[provider] = used + 1
-            tmp = self.path.with_suffix(".tmp")
-            tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
-            os.replace(tmp, self.path)
+            used=state["counts"].get(provider,0)
+            if used>=self.limits[provider]:
+                return False
+            state["counts"][provider]=used+1
+            tmp=self.path.with_suffix(".tmp")
+            try:
+                tmp.write_text(json.dumps(state,ensure_ascii=False),encoding="utf-8")
+                os.replace(tmp,self.path)
+            except OSError:
+                return False  # Do not spend an unaccounted cloud request.
             return True
 
 class FreeRouter:
