@@ -133,6 +133,10 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 if url.path == "/v1/world/npc":
                     q = parse_qs(url.query)
                     return self._answer(200,world.snapshot(q.get("player_id",[""])[0],q.get("npc_id",[""])[0]))
+                if url.path == "/v1/world/story":
+                    q=parse_qs(url.query)
+                    return self._answer(200,world.story_progress(
+                        q.get("player_id",[""])[0],q.get("npc_id",[""])[0]))
                 return self._answer(404,{"error":"not_found"})
             except (ValueError,TypeError) as exc:
                 return self._answer(400,{"error":str(exc)})
