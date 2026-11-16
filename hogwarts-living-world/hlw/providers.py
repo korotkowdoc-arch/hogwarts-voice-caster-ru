@@ -4,12 +4,14 @@ from __future__ import annotations
 import json
 import os
 import time
+import hashlib
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from threading import Lock
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from .retry_cache import RetryCache
 
 # Never allow request or config to inject an arbitrary/potentially paid endpoint.
 PROVIDERS = {
@@ -102,6 +104,7 @@ class FreeRouter:
         self.transport = transport or urlopen
         self.keys = keys if keys is not None else os.environ
         self.cooldown_until: dict[str, float] = {}
+        self.retry_cache = RetryCache(ttl_seconds=25)
 
     @property
     def configured(self) -> list[str]:
@@ -113,6 +116,17 @@ class FreeRouter:
             raise ValueError("Unsupported output_format")
         if output_format == "json_object":
             messages = [{"role":"system","content":"Return exactly one valid JSON object, no code fences or commentary."}] + messages
+        request_hash=hashlib.sha256(json.dumps(
+            {"messages":messages,"max_tokens":max_tokens,"output_format":output_format},
+            ensure_ascii=False,sort_keys=True).encode("utf-8")).hexdigest()
+        try:
+            return self.retry_cache.get_or_run(
+                request_hash,lambda:self._complete_uncached(messages,max_tokens,output_format))
+        except (LookupError,TimeoutError):
+            raise NoFreeProvider("A concurrent duplicate cloud request failed") from None
+
+    def _complete_uncached(self, messages: list[dict], max_tokens: int,
+                           output_format: str) -> Completion:
         for provider, details in PROVIDERS.items():
             key = self.keys.get(details["env"])
             if not key or self.cooldown_until.get(provider, 0) > time.monotonic():
