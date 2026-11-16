@@ -164,3 +164,28 @@ The probe is not compatible-verified with the player's Sonorus build yet.
 Back up saves and Sonorus data before installation.
 
 Run tests: python -m unittest discover -s tests -v
+
+
+## 0.4.0 — Release candidate before first in-game test
+
+- Russian context-aware NPC persona cards for Sebastian, Ominis and Poppy
+  with the last five confirmed player actions and per-save relationship tiers.
+- Small, deterministic story arcs: meetings, refusals, disclosures, missed
+  meetings and reconciliation. All effects remain proposals; no game hooks
+  or original quests are modified yet.
+- 25-second in-memory retry cache and singleflight protection prevent
+  duplicate simultaneous calls from consuming multiple free requests.
+- Local Host and Origin validation to prevent DNS-rebind/cross-site requests.
+- Daily cloud counters now **fail closed if corrupted**, rather than silently
+  resetting the request limit; remaining requests visible in the dashboard.
+- A guarded optional probe installer/uninstaller for an existing Sonorus
+  UE4SS installation. It NEVER installs a second UE4SS.
+- A complete offline story dry run: demo-full-story.ps1. No API key needed.
+- Draft ADAPTER_PROTOCOL.md records explicit inbound factual event schema,
+  outbound proposals, and why a future verified game adapter is still needed.
+- CI now runs a self-test of the packaged Windows EXE, not just Python sources,
+  and bundles a SHA256 checksum.
+
+See QUICKSTART_RU.md for the shortest user workflow. The cloud and
+in-game integrations are *unverified without the player's free API keys
+and installed Hogwarts Legacy/Sonorus environment*.
