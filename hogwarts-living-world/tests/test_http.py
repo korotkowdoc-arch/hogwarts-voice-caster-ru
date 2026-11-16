@@ -132,7 +132,7 @@ class ServerTests(unittest.TestCase):
         self.request("/v1/chat/completions",{"messages":[
             {"role":"system","content":"You are Sebastian [HLW_CONTEXT player=save_1 npc=sebastian]"},
             {"role":"user","content":"Привет"}]})
-        self.assertIn("отношение -9/100, доверие -4/100", self.router.last_messages[0]["content"])
+        self.assertIn("Отношение -9/100, доверие -4/100", self.router.last_messages[0]["content"])
         self.assertIn("Игрок отказался помогать", self.router.last_messages[0]["content"])
         self.assertIn("Себастьян", self.router.last_messages[0]["content"])
 
