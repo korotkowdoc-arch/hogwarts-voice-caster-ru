@@ -45,6 +45,11 @@ code{color:var(--gold)}.mutedtitle{color:var(--muted);font-size:13px}
 <div class="actions"><button id="say">Получить ответ ИИ</button></div>
 <pre id="reply" aria-live="polite">Ответ появится здесь.</pre>
 </div>
+<div class="panel full"><h2>Диагностика ответов Sonorus</h2>
+<p>Только статус, провайдер, длительность и размер запроса. Текст разговоров и ключи не записываются. Если API вернул 200, а NPC попрощался — ищем причину в логике сцены или генерации ответа.</p>
+<div class="actions"><button class="secondary" id="refreshlog">Обновить журнал</button></div>
+<pre id="api-log" aria-live="polite">Пока нет запросов.</pre>
+</div>
 <div class="panel full"><h2>Память персонажей</h2>
 <p>Это значения из нашего SQLite, а не сохранение Hogwarts Legacy. По умолчанию показан тестовый профиль <code>dashboard_demo</code>.</p>
 <label for="profile">ID профиля</label><input id="profile" value="dashboard_demo" maxlength="64" pattern="[A-Za-z0-9_.-]+">
@@ -66,6 +71,17 @@ async function api(path,body){
  const data=await response.json();
  if(!response.ok)throw Error(typeof data.error==="string"?data.error:JSON.stringify(data.error||data));
  return data;
+}
+async function refreshLog(){
+ try{
+  const data=await api("/v1/diagnostics/recent");
+  const entries=(data.events||[]).slice(0,12);
+  el("api-log").textContent=entries.length?
+     entries.map(v=>new Date(v.at*1000).toLocaleTimeString("ru-RU")+
+       " · "+v.phase+" · "+v.status+" · "+v.provider+
+       " · "+v.code+" · "+v.duration_ms+" мс"+
+       (v.streaming?" · поток":"")).join("\n"):"Пока нет запросов.";
+ }catch(e){el("api-log").textContent="Журнал недоступен: "+e.message}
 }
 async function refresh(){
  try{
@@ -123,8 +139,9 @@ async function proposals(){
  try{const r=await api("/v1/world/outbox?player_id=dashboard_demo");el("story").textContent=JSON.stringify(r.events,null,2)}
  catch(e){el("story").textContent="Ошибка: "+e.message}
 }
-el("refresh").onclick=refresh;el("read").onclick=relations;el("say").onclick=chat;
+el("refresh").onclick=()=>{refresh();refreshLog()};
+el("refreshlog").onclick=refreshLog;el("read").onclick=relations;el("say").onclick=chat;
 el("help").onclick=()=>event("player_helped");el("secret").onclick=()=>event("secret_revealed_to_ominis");
 el("outbox").onclick=proposals;
-refresh();relations();
+refresh();refreshLog();relations();
 </script></body></html>'''
