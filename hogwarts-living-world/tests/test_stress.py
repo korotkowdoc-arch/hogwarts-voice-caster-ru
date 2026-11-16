@@ -43,15 +43,19 @@ class StressTests(unittest.TestCase):
             self.assertLessEqual(abs(value["affinity"]),100)
             self.assertLessEqual(abs(value["trust"]),100)
 
-    def test_budget_file_corruption_recovers_without_unbounded_calls(self):
+    def test_corrupt_budget_fails_closed_instead_of_reissuing_calls(self):
         path=self.root/"counts.json"
         path.write_text("[]",encoding="utf-8")
         budget=DailyBudget(path,{"gemini":2})
+        self.assertFalse(budget.consume("gemini"))
+        self.assertEqual(budget.status()["state"],"locked_corrupt_counter")
+        path.unlink()  # Explicit manual recovery, not automatic quota bypass.
         self.assertTrue(budget.consume("gemini"))
         self.assertTrue(budget.consume("gemini"))
         self.assertFalse(budget.consume("gemini"))
+        self.assertEqual(budget.status()["remaining"]["gemini"],0)
         path.write_text(json.dumps({"date":"invalid","counts":{"gemini":-999}}),encoding="utf-8")
-        self.assertTrue(budget.consume("gemini"))
+        self.assertFalse(budget.consume("gemini"))
 
     def test_small_capacity_does_not_invoke_second_time(self):
         budget=DailyBudget(self.root/"budget.json",{"gemini":1})
