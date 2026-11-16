@@ -16,6 +16,7 @@ from .compat import normalize_messages, response_type, extract_context, Compatib
 from .inbox import GameEventInbox
 from .speech import CloudSpeech, SpeechUnavailable
 from .dashboard import HTML
+from .diagnostics import RequestHistory
 
 def data_dir() -> Path:
     root = os.environ.get("HLW_DATA_DIR")
@@ -41,6 +42,11 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
     def budget_status():
         budget=getattr(router,"budget",None)
         return budget.status() if budget and hasattr(budget,"status") else {"state":"test_router"}
+
+    history=RequestHistory(directory / "bridge-diagnostics.jsonl")
+    # Only safe request metadata (never prompts, tokens, provider payloads).
+    if hasattr(router, "on_event"):
+        router.on_event=lambda **event: history.record(**event)
 
     bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
     watch_events = os.environ.get("HLW_WATCH_EVENTS", "0") == "1"
@@ -89,8 +95,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
 
         def _payload(self) -> dict:
             n = int(self.headers.get("Content-Length", "0"))
-            if n < 2 or n > 128_000:
-                raise ValueError("Request body must be 2-128000 bytes")
+            if n < 2 or n > 768_000:
+                raise ValueError("Request body must be 2-768000 bytes")
             data = json.loads(self.rfile.read(n))
             if not isinstance(data,dict):
                 raise ValueError("Expected JSON object")
@@ -117,6 +123,9 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                              "local_free_budget":budget_status()})
                 if url.path == "/v1/models":
                     return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
+                if url.path == "/v1/diagnostics/recent":
+                    return self._answer(200,{"events":history.recent(),
+                        "privacy":"Only status/size/error metadata; no prompts or API keys."})
                 if url.path == "/v1/diagnostics":
                     return self._answer(200,{
                         "storage_integrity":world.integrity_check(),
@@ -189,6 +198,7 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                     return self._answer(200,{"acknowledged":world.acknowledge(body["player_id"],body["ids"])})
                 if path != "/v1/chat/completions":
                     return self._answer(404,{"error":"not_found"})
+                started=time.monotonic()
                 original_messages = body.get("messages")
                 messages = normalize_messages(original_messages)
                 meta = body.get("metadata")
@@ -209,6 +219,10 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                     completion = router.complete(messages,max_tokens=max_tokens)
                 else:
                     completion = router.complete(messages,max_tokens=max_tokens,output_format=output_format)
+                history.record(status=200,phase="bridge",provider=completion.provider,
+                               code="ok",duration_ms=int((time.monotonic()-started)*1000),
+                               chars=sum(len(m.get("content","")) for m in messages),
+                               messages=len(messages),streaming=body.get("stream") is True)
                 rid = "chatcmpl-"+uuid.uuid4().hex[:20]
                 if body.get("stream") is True:
                     chunks = [
@@ -230,9 +244,16 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             except SpeechUnavailable as exc:
                 return self._answer(503,{"error":{"type":"cloud_tts_unavailable","message":str(exc)}})
             except NoFreeProvider:
+                if urlparse(self.path).path == "/v1/chat/completions":
+                    history.record(status=503,phase="bridge",code="free_provider_unavailable",
+                                   streaming=body.get("stream") is True if isinstance(body,dict) else False)
                 return self._answer(503,{"error":{"type":"free_provider_unavailable","message":
                      "No free provider response. No paid fallback. NPC and save data unchanged."}})
             except (KeyError,ValueError,TypeError,json.JSONDecodeError) as exc:
+                if urlparse(self.path).path == "/v1/chat/completions":
+                    reason= "invalid_context" if isinstance(exc,CompatibilityError) else (
+                        "invalid_request_size" if "body must be" in str(exc).lower() else "bad_request")
+                    history.record(status=400,phase="bridge",code=reason)
                 return self._answer(400,{"error":"bad_request","message":str(exc)})
     def close_storage():
         if inbox:
