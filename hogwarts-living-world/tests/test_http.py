@@ -82,6 +82,19 @@ class ServerTests(unittest.TestCase):
             self.assertIn("frame-ancestors 'none'",response.headers.get("Content-Security-Policy"))
             self.assertNotIn("GEMINI_API_KEY",html)
 
+    def test_rejects_dns_rebind_host_header(self):
+        req=Request(self.base+"/health",headers={"Host":"evil.example"})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(req,timeout=3)
+        self.assertEqual(caught.exception.code,403)
+
+    def test_local_origin_is_allowed_even_with_ephemeral_test_port(self):
+        payload={"messages":[{"role":"user","content":"Привет"}]}
+        req=Request(self.base+"/v1/chat/completions",data=json.dumps(payload).encode(),
+                    headers={"Content-Type":"application/json","Origin":self.base})
+        with urlopen(req,timeout=3) as response:
+            self.assertEqual(response.status,200)
+
     def test_rejects_unsafe_cross_origin_post(self):
         req=Request(self.base+"/v1/chat/completions",data=b'{}',
                     headers={"Content-Type":"application/json","Origin":"https://random-site.example"})
