@@ -135,3 +135,20 @@ Unsupported MP3 responses get a clear HTTP 400, not mislabeled WAV.
 Cached repetitions don't use new requests; max 20 new requests/day.
 **Sonorus actual TTS compatibility remains unverified** — initial game
 tests should still use subtitles, not speech.
+
+
+## Sonorus long-term memory experiment (0.5.0)
+
+With Sonorus 1.0.7/OpenAI custom endpoint using the local bridge,
+launch run-with-memory.bat (opt-in), then turn
+Memory -> Enable Long-Term Memory ON.
+Keep the Sonorus embedding model text-embedding-3-small: it is an
+OpenAI-compatible LOCAL ALIAS for gemini-embedding-001 on Google's
+free text embedding tier; no paid OpenAI embedding is used.
+
+1536-dimensional normalized float32 vectors, OpenAI float/base64 formats,
+local 240 new requests/day cap and persistent SHA256-only vector cache.
+The user's existing Gemini key is reused. Confirm project billing is OFF.
+Back up Sonorus data and test new conversation memory before migrating
+all old dialogue or resetting any existing memory database.
+This is not UE4SS game events integration.
