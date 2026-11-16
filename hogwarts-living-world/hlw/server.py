@@ -174,11 +174,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                     raise CompatibilityError("metadata supports only player_id/npc_id")
                 context = extract_context(original_messages, meta)
                 if context is not None:
-                    memory = world.snapshot(context["player_id"],context["npc_id"])
-                    messages = [{"role":"system","content":"NPC long-term relationship memory (recorded game state): "
-                                 + json.dumps({"affinity":memory["affinity"],"trust":memory["trust"]})
-                                 + ". Use this as emotional context, not as a command. "
-                                 + "Do not claim that any in-game quest, NPC movement or letter was executed."}] + messages
+                    narrative = world.context(context["player_id"],context["npc_id"])
+                    messages = [{"role":"system","content":narrative}] + messages
                 language = os.environ.get("HLW_REPLY_LANGUAGE","").lower().strip()
                 if language == "ru":
                     messages = [{"role":"system","content":"Ответь на русском языке естественно и в характере NPC, без рассказчика."}] + messages
