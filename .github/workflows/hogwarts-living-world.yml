@@ -67,6 +67,8 @@ jobs:
           $digest = (Get-FileHash dist/HogwartsLivingWorld.exe -Algorithm SHA256).Hash
           "HogwartsLivingWorld.exe SHA256 $digest" | Set-Content -Path package/SHA256SUMS.txt -Encoding Ascii
           Copy-Item run.bat package/
+          Copy-Item run-with-memory.bat package/
+          Copy-Item demo-memory.ps1 package/
           Copy-Item README.md package/
           Copy-Item QUICKSTART_RU.md package/
           Copy-Item ADAPTER_PROTOCOL.md package/
@@ -86,10 +88,10 @@ jobs:
           New-Item -Path package/UE4SS-OPTIONAL -ItemType Directory | Out-Null
           Copy-Item ue4ss-probe/HLWProbe package/UE4SS-OPTIONAL/ -Recurse
           Copy-Item ue4ss-probe/README.md package/UE4SS-OPTIONAL/
-          Compress-Archive -Path package/* -DestinationPath HogwartsLivingWorld-0.4.1-win64.zip -Force
+          Compress-Archive -Path package/* -DestinationPath HogwartsLivingWorld-0.5.0-win64.zip -Force
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: HogwartsLivingWorld-0.4.1-win64
-          path: hogwarts-living-world/HogwartsLivingWorld-0.4.1-win64.zip
+          name: HogwartsLivingWorld-0.5.0-win64
+          path: hogwarts-living-world/HogwartsLivingWorld-0.5.0-win64.zip
           if-no-files-found: error
