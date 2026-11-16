@@ -33,6 +33,7 @@ code{color:var(--gold)}.mutedtitle{color:var(--muted);font-size:13px}
 <div class="panel"><h2>Состояние моста</h2><dl class="info">
 <dt>Версия</dt><dd id="version">...</dd>
 <dt>Текстовый ИИ</dt><dd id="providers">...</dd>
+<dt>Осталось вызовов сегодня</dt><dd id="quotas">...</dd>
 <dt>Игровой мод</dt><dd><span class="status warning">не подтверждён</span></dd>
 <dt>Последний UE4SS сигнал</dt><dd id="probe">пока нет</dd>
 <dt>База памяти</dt><dd id="db">...</dd>
@@ -71,6 +72,10 @@ async function refresh(){
   const [h,d]=await Promise.all([api("/health"),api("/v1/diagnostics")]);
   el("version").textContent=h.version;
   el("providers").textContent=(h.configured_providers||[]).join(" + ")||"Ключи ещё не настроены";
+  const budget=h.local_free_budget||{};
+  el("quotas").textContent=budget.state==="ok"?
+    Object.entries(budget.remaining).map(([k,v])=>k+": "+v).join(" · "):
+    (budget.state==="locked_corrupt_counter"?"Запросы заблокированы: повреждён счётчик":"Недоступно");
   el("probe").textContent=h.last_probe&&h.last_probe.received_at?
       new Date(h.last_probe.received_at*1000).toLocaleString("ru-RU"):"пока нет";
   el("db").textContent=d.storage_integrity==="ok"?"проверена, цела":String(d.storage_integrity);
