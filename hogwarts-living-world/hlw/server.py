@@ -17,6 +17,7 @@ from .inbox import GameEventInbox
 from .speech import CloudSpeech, SpeechUnavailable
 from .dashboard import HTML
 from .diagnostics import RequestHistory
+from .embeddings import GeminiEmbeddingBridge, EmbeddingUnavailable
 
 def data_dir() -> Path:
     root = os.environ.get("HLW_DATA_DIR")
@@ -51,6 +52,9 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
     bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
     watch_events = os.environ.get("HLW_WATCH_EVENTS", "0") == "1"
     speech = CloudSpeech(directory) if os.environ.get("HLW_ENABLE_CLOUD_TTS", "0") == "1" else None
+    # Explicit opt-in. Only the fixed Gemini text-embedding-001 endpoint.
+    embeddings = (GeminiEmbeddingBridge(directory)
+                  if os.environ.get("HLW_ENABLE_EMBEDDINGS","0") == "1" else None)
     inbox = GameEventInbox(directory / "game-events.jsonl",world) if watch_events else None
     if inbox:
         inbox.start()
@@ -120,9 +124,14 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                              "cloud_tts_preview_enabled":speech is not None,
                                              "last_probe":world.last_probe(),
                                              "game_integration_verified":False,
-                                             "local_free_budget":budget_status()})
+                                             "local_free_budget":budget_status(),
+                        "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False},
+                                             "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False}})
                 if url.path == "/v1/models":
-                    return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
+                    models=[{"id":"hogwarts-living-world-free","object":"model"}]
+                    if embeddings is not None:
+                        models.append({"id":"text-embedding-3-small","object":"model"})
+                    return self._answer(200,{"object":"list","data":models})
                 if url.path == "/v1/diagnostics/recent":
                     return self._answer(200,{"events":history.recent(),
                         "privacy":"Only status/size/error metadata; no prompts or API keys."})
@@ -165,6 +174,16 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             try:
                 body = self._payload()
                 path = urlparse(self.path).path
+                if path == "/v1/embeddings":
+                    if embeddings is None:
+                        return self._answer(404,{"error":"embedding_disabled",
+                            "message":"Opt in with run-with-memory.bat and an unbilled Gemini free-tier key"})
+                    began=time.monotonic()
+                    result=embeddings.response(body)
+                    history.record(status=200,phase="embedding",provider="gemini_embedding",
+                                   code="ok",duration_ms=int((time.monotonic()-began)*1000),
+                                   messages=len(result["data"]))
+                    return self._answer(200,result)
                 if path == "/v1/world/backup":
                     dest=world.backup(directory / "backups")
                     return self._answer(200,{"backup_created":True,"file":dest.name})
@@ -241,6 +260,12 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 return self._answer(200,{"id":rid,"object":"chat.completion","created":int(time.time()),
                     "model":"hogwarts-living-world-free","provider":completion.provider,
                     "choices":[{"index":0,"message":{"role":"assistant","content":completion.text},"finish_reason":"stop"}]})
+            except EmbeddingUnavailable as exc:
+                history.record(status=503,phase="embedding",provider="gemini_embedding",
+                               code=exc.reason)
+                return self._answer(503,{"error":{"type":"free_embedding_unavailable",
+                                "message":"Free Gemini embedding unavailable; no paid fallback.",
+                                "reason":exc.reason}})
             except SpeechUnavailable as exc:
                 return self._answer(503,{"error":{"type":"cloud_tts_unavailable","message":str(exc)}})
             except NoFreeProvider:
@@ -250,6 +275,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 return self._answer(503,{"error":{"type":"free_provider_unavailable","message":
                      "No free provider response. No paid fallback. NPC and save data unchanged."}})
             except (KeyError,ValueError,TypeError,json.JSONDecodeError) as exc:
+                if urlparse(self.path).path == "/v1/embeddings":
+                    history.record(status=400,phase="embedding",provider="none",code="invalid_embedding_input")
                 if urlparse(self.path).path == "/v1/chat/completions":
                     reason= "invalid_context" if isinstance(exc,CompatibilityError) else (
                         "invalid_request_size" if "body must be" in str(exc).lower() else "bad_request")
@@ -259,6 +286,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
         if inbox:
             inbox.stop()
         world.db.close()
+        if embeddings is not None:
+            embeddings.close()
     Handler.close_storage = staticmethod(close_storage)
     return Handler
 
