@@ -1,4 +1,4 @@
-# Hogwarts Living World v0.3.0 — cloud-free-only prototype
+# Hogwarts Living World v0.4.0 — cloud-free-only prototype
 
 **This is a standalone technical prototype, not yet an installed Hogwarts Legacy mod.**
 It does not change the existing Voice Caster or any game files.
