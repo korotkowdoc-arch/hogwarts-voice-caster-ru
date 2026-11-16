@@ -88,10 +88,14 @@ async function relations(){
  const area=el("npcs");area.replaceChildren();
  for(const [id,name] of [["sebastian","Себастьян"],["ominis","Оминис"],["poppy","Поппи"]]){
   try{
-   const data=await api("/v1/world/npc?player_id="+encodeURIComponent(player)+"&npc_id="+id);
+   const [data,story]=await Promise.all([
+     api("/v1/world/npc?player_id="+encodeURIComponent(player)+"&npc_id="+id),
+     api("/v1/world/story?player_id="+encodeURIComponent(player)+"&npc_id="+id)]);
    const row=document.createElement("div");row.className="npcrow";
    const title=document.createElement("strong");title.textContent=name;
-   const stats=document.createElement("span");stats.className="meters";stats.textContent="Отношение "+data.affinity+" · доверие "+data.trust;
+   const stats=document.createElement("span");stats.className="meters";
+   stats.textContent="Отношение "+data.affinity+" · доверие "+data.trust+
+     " · сюжетные этапы "+story.completed_milestones.length;
    row.append(title,stats);area.append(row);
   }catch(e){area.textContent="Ошибка: "+e.message;break}
  }
