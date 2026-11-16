@@ -1,0 +1,321 @@
+"""Loopback HTTP bridge: Chat Completions subset + deterministic world API."""
+from __future__ import annotations
+
+import json
+import os
+import time
+import uuid
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+
+from . import __version__
+from .providers import DailyBudget, FreeRouter, NoFreeProvider
+from .world import World
+from .compat import normalize_messages, response_type, extract_context, CompatibilityError
+from .inbox import GameEventInbox
+from .speech import CloudSpeech, SpeechUnavailable
+from .dashboard import HTML
+from .diagnostics import RequestHistory
+from .embeddings import GeminiEmbeddingBridge, EmbeddingUnavailable
+
+def data_dir() -> Path:
+    root = os.environ.get("HLW_DATA_DIR")
+    if root:
+        return Path(root)
+    return Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".local" / "share") / "HogwartsLivingWorld"
+
+def create_app(data: Path | None = None, router: FreeRouter | None = None):
+    directory = data or data_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    db_path = directory / "world.sqlite3"
+    existing_db = db_path.exists() and db_path.stat().st_size > 0
+    world = World(db_path)
+    # Backup existing world data once each day. SQLite backup is WAL-safe.
+    if existing_db:
+        from datetime import date
+        backup_dir = directory / "backups"
+        today = date.today().strftime("%Y%m%d")
+        if not list(backup_dir.glob("world-"+today+"*.sqlite3")):
+            world.backup(backup_dir)
+    router = router or FreeRouter(DailyBudget(directory / "daily_counts.json",
+                                            {"gemini": 120, "groq": 300}))
+    def budget_status():
+        budget=getattr(router,"budget",None)
+        return budget.status() if budget and hasattr(budget,"status") else {"state":"test_router"}
+
+    history=RequestHistory(directory / "bridge-diagnostics.jsonl")
+    # Only safe request metadata (never prompts, tokens, provider payloads).
+    if hasattr(router, "on_event"):
+        router.on_event=lambda **event: history.record(**event)
+
+    bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
+    watch_events = os.environ.get("HLW_WATCH_EVENTS", "0") == "1"
+    speech = CloudSpeech(directory) if os.environ.get("HLW_ENABLE_CLOUD_TTS", "0") == "1" else None
+    # Explicit opt-in. Only the fixed Gemini text-embedding-001 endpoint.
+    embeddings = (GeminiEmbeddingBridge(directory)
+                  if os.environ.get("HLW_ENABLE_EMBEDDINGS","0") == "1" else None)
+    inbox = GameEventInbox(directory / "game-events.jsonl",world) if watch_events else None
+    if inbox:
+        inbox.start()
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "HogwartsLivingWorld/" + __version__
+
+        def log_message(self, fmt, *args):
+            # Avoid log messages containing player prompts, API keys or query strings.
+            pass
+
+        def _dashboard(self):
+            raw=HTML.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type","text/html; charset=utf-8")
+            self.send_header("Content-Length",str(len(raw)))
+            self.send_header("Cache-Control","no-store")
+            self.send_header("X-Content-Type-Options","nosniff")
+            self.send_header("Content-Security-Policy",
+                "default-src 'none'; script-src 'unsafe-inline'; "
+                "style-src 'unsafe-inline'; connect-src 'self'; frame-ancestors 'none'")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def _answer(self, status: int, payload: dict):
+            raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def _local_host(self) -> bool:
+            """Prevent DNS rebinding access from hostile domains to 127.0.0.1."""
+            authority=self.headers.get("Host","").lower().strip()
+            port=self.server.server_port
+            return authority in (f"127.0.0.1:{port}",f"localhost:{port}")
+
+        def _authorized(self) -> bool:
+            return not bridge_token or self.headers.get("Authorization", "") == "Bearer " + bridge_token
+
+        def _payload(self) -> dict:
+            n = int(self.headers.get("Content-Length", "0"))
+            if n < 2 or n > 768_000:
+                raise ValueError("Request body must be 2-768000 bytes")
+            data = json.loads(self.rfile.read(n))
+            if not isinstance(data,dict):
+                raise ValueError("Expected JSON object")
+            return data
+
+        def do_GET(self):
+            if not self._local_host():
+                return self._answer(403,{"error":"invalid_local_host"})
+            if not self._authorized():
+                return self._answer(401,{"error":"unauthorized"})
+            url = urlparse(self.path)
+            if url.path in ("/","/ui"):
+                return self._dashboard()
+            try:
+                if url.path == "/health":
+                    return self._answer(200,{"version":__version__,"mode":"cloud_free_only",
+                                             "configured_providers":router.configured,"world":"ready",
+                                             "sonorus":"openai_compatible_chat_completions_beta",
+                                             "text_only":True,"game_hooks_installed":False,
+                                             "game_event_file_inbox":watch_events,
+                                             "cloud_tts_preview_enabled":speech is not None,
+                                             "last_probe":world.last_probe(),
+                                             "game_integration_verified":False,
+                                             "local_free_budget":budget_status(),
+                                             "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False}})
+                if url.path == "/v1/models":
+                    models=[{"id":"hogwarts-living-world-free","object":"model"}]
+                    if embeddings is not None:
+                        models.append({"id":"text-embedding-3-small","object":"model"})
+                    return self._answer(200,{"object":"list","data":models})
+                if url.path == "/v1/diagnostics/recent":
+                    return self._answer(200,{"events":history.recent(),
+                        "privacy":"Only status/size/error metadata; no prompts or API keys."})
+                if url.path == "/v1/diagnostics":
+                    return self._answer(200,{
+                        "storage_integrity":world.integrity_check(),
+                        "last_probe":world.last_probe(),
+                        "watching_event_inbox":watch_events,
+                        "key_names_present":router.configured,
+                        "local_free_budget":budget_status(),
+                        "long_term_embeddings":embeddings.status() if embeddings else {"enabled":False},
+                        "data_directory":str(directory),
+                        "sonorus_game_integration_verified":False
+                    })
+                if url.path == "/v1/world/outbox":
+                    player = parse_qs(url.query).get("player_id",[""])[0]
+                    return self._answer(200,{"events":world.pending(player)})
+                if url.path == "/v1/world/npc":
+                    q = parse_qs(url.query)
+                    return self._answer(200,world.snapshot(q.get("player_id",[""])[0],q.get("npc_id",[""])[0]))
+                if url.path == "/v1/world/story":
+                    q=parse_qs(url.query)
+                    return self._answer(200,world.story_progress(
+                        q.get("player_id",[""])[0],q.get("npc_id",[""])[0]))
+                return self._answer(404,{"error":"not_found"})
+            except (ValueError,TypeError) as exc:
+                return self._answer(400,{"error":str(exc)})
+
+        def do_POST(self):
+            if not self._local_host():
+                return self._answer(403,{"error":"invalid_local_host"})
+            origin=self.headers.get("Origin")
+            allowed=(f"http://127.0.0.1:{self.server.server_port}",
+                     f"http://localhost:{self.server.server_port}")
+            if origin and origin not in allowed:
+                return self._answer(403,{"error":"cross_site_request_denied"})
+            if not self.headers.get("Content-Type","").lower().startswith("application/json"):
+                return self._answer(415,{"error":"application_json_required"})
+            if not self._authorized():
+                return self._answer(401,{"error":"unauthorized"})
+            try:
+                body = self._payload()
+                path = urlparse(self.path).path
+                if path == "/v1/embeddings":
+                    if embeddings is None:
+                        return self._answer(404,{"error":"embedding_disabled",
+                            "message":"Opt in with run-with-memory.bat and an unbilled Gemini free-tier key"})
+                    began=time.monotonic()
+                    result=embeddings.response(body)
+                    history.record(status=200,phase="embedding",provider="gemini_embedding",
+                                   code="ok",duration_ms=int((time.monotonic()-began)*1000),
+                                   messages=len(result["data"]))
+                    return self._answer(200,result)
+                if path == "/v1/world/backup":
+                    dest=world.backup(directory / "backups")
+                    return self._answer(200,{"backup_created":True,"file":dest.name})
+                if path in ("/v1/voice/preview","/v1/audio/speech"):
+                    if speech is None:
+                        return self._answer(404,{"error":"cloud_tts_disabled"})
+                    if path == "/v1/audio/speech":
+                        # OpenAI-compatible WAV subset. Never obey an input
+                        # model name as a remote provider/model override.
+                        fmt=body.get("response_format","wav")
+                        if fmt != "wav":
+                            raise ValueError("Only WAV output is supported by the free cloud bridge")
+                        voice=body.get("voice","alloy")
+                        voice={"alloy":"Kore","nova":"Aoede","echo":"Charon",
+                               "fable":"Puck"}.get(voice,voice)
+                        audio=speech.synthesize(body.get("input"),voice,"neutral")
+                    else:
+                        audio=speech.synthesize(body.get("text"),body.get("voice","Kore"),
+                                                 body.get("style","neutral"))
+                    self.send_response(200)
+                    self.send_header("Content-Type","audio/wav")
+                    self.send_header("Content-Length",str(len(audio)))
+                    self.send_header("Cache-Control","private, max-age=0")
+                    self.end_headers()
+                    self.wfile.write(audio)
+                    return
+                if path == "/v1/world/event":
+                    result = world.apply(body["player_id"],body["npc_id"],body["event"],body["event_id"])
+                    return self._answer(200,result)
+                if path == "/v1/world/outbox/ack":
+                    return self._answer(200,{"acknowledged":world.acknowledge(body["player_id"],body["ids"])})
+                if path != "/v1/chat/completions":
+                    return self._answer(404,{"error":"not_found"})
+                started=time.monotonic()
+                original_messages = body.get("messages")
+                messages = normalize_messages(original_messages)
+                meta = body.get("metadata")
+                if meta is not None and (not isinstance(meta,dict) or any(k not in ("player_id","npc_id") for k in meta)):
+                    raise CompatibilityError("metadata supports only player_id/npc_id")
+                context = extract_context(original_messages, meta)
+                if context is not None:
+                    narrative = world.context(context["player_id"],context["npc_id"])
+                    messages = [{"role":"system","content":narrative}] + messages
+                language = os.environ.get("HLW_REPLY_LANGUAGE","").lower().strip()
+                if language == "ru":
+                    messages = [{"role":"system","content":"Ответь на русском языке естественно и в характере NPC, без рассказчика."}] + messages
+                output_format = response_type(body.get("response_format"))
+                max_tokens = body.get("max_completion_tokens",body.get("max_tokens",600))
+                if type(max_tokens) is not int:
+                    raise ValueError("max_tokens must be an integer")
+                if output_format == "text":
+                    completion = router.complete(messages,max_tokens=max_tokens)
+                else:
+                    completion = router.complete(messages,max_tokens=max_tokens,output_format=output_format)
+                history.record(status=200,phase="bridge",provider=completion.provider,
+                               code="ok",duration_ms=int((time.monotonic()-started)*1000),
+                               chars=sum(len(m.get("content","")) for m in messages),
+                               messages=len(messages),streaming=body.get("stream") is True)
+                rid = "chatcmpl-"+uuid.uuid4().hex[:20]
+                if body.get("stream") is True:
+                    chunks = [
+                        {"id":rid,"object":"chat.completion.chunk","created":int(time.time()),"model":"hogwarts-living-world-free",
+                         "choices":[{"index":0,"delta":{"role":"assistant","content":completion.text},"finish_reason":None}]},
+                        {"id":rid,"object":"chat.completion.chunk","created":int(time.time()),"model":"hogwarts-living-world-free",
+                         "choices":[{"index":0,"delta":{},"finish_reason":"stop"}]},
+                    ]
+                    raw = ("".join("data: "+json.dumps(c,ensure_ascii=False)+"\n\n" for c in chunks)+"data: [DONE]\n\n").encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type","text/event-stream; charset=utf-8")
+                    self.send_header("Cache-Control","no-store")
+                    self.send_header("Content-Length",str(len(raw)))
+                    self.end_headers()
+                    return self.wfile.write(raw)
+                return self._answer(200,{"id":rid,"object":"chat.completion","created":int(time.time()),
+                    "model":"hogwarts-living-world-free","provider":completion.provider,
+                    "choices":[{"index":0,"message":{"role":"assistant","content":completion.text},"finish_reason":"stop"}]})
+            except EmbeddingUnavailable as exc:
+                history.record(status=503,phase="embedding",provider="gemini_embedding",
+                               code=exc.reason)
+                return self._answer(503,{"error":{"type":"free_embedding_unavailable",
+                                "message":"Free Gemini embedding unavailable; no paid fallback.",
+                                "reason":exc.reason}})
+            except SpeechUnavailable as exc:
+                return self._answer(503,{"error":{"type":"cloud_tts_unavailable","message":str(exc)}})
+            except NoFreeProvider:
+                if urlparse(self.path).path == "/v1/chat/completions":
+                    history.record(status=503,phase="bridge",code="free_provider_unavailable",
+                                   streaming=body.get("stream") is True if isinstance(body,dict) else False)
+                return self._answer(503,{"error":{"type":"free_provider_unavailable","message":
+                     "No free provider response. No paid fallback. NPC and save data unchanged."}})
+            except (KeyError,ValueError,TypeError,json.JSONDecodeError) as exc:
+                if urlparse(self.path).path == "/v1/embeddings":
+                    history.record(status=400,phase="embedding",provider="none",code="invalid_embedding_input")
+                if urlparse(self.path).path == "/v1/chat/completions":
+                    reason= "invalid_context" if isinstance(exc,CompatibilityError) else (
+                        "invalid_request_size" if "body must be" in str(exc).lower() else "bad_request")
+                    history.record(status=400,phase="bridge",code=reason)
+                return self._answer(400,{"error":"bad_request","message":str(exc)})
+    def close_storage():
+        if inbox:
+            inbox.stop()
+        world.db.close()
+        if embeddings is not None:
+            embeddings.close()
+    Handler.close_storage = staticmethod(close_storage)
+    return Handler
+
+def main():
+    import sys
+    if "--version" in sys.argv[1:]:
+        print("Hogwarts Living World "+__version__)
+        return
+    if "--self-test" in sys.argv[1:]:
+        from .selftest import run_smoke_test
+        ok=run_smoke_test()
+        print("HLW OFFLINE SELF-TEST: "+("PASS" if ok else "FAIL"))
+        if not ok:
+            raise SystemExit(1)
+        return
+    # Never expose cloud keys on a public interface.
+    addr=("127.0.0.1",8765)
+    handler = create_app()
+    httpd=ThreadingHTTPServer(addr,handler)
+    print(f"Hogwarts Living World v{__version__} http://{addr[0]}:{addr[1]}")
+    print("Cloud models only. No paid fallbacks. Ctrl+C to stop.")
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        httpd.server_close()
+        handler.close_storage()
+
+if __name__ == "__main__":
+    main()

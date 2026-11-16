@@ -1,0 +1,97 @@
+name: Hogwarts Living World - tests and Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'hogwarts-living-world/**'
+      - '.github/workflows/hogwarts-living-world.yml'
+concurrency:
+  group: hlw-build-${{ github.sha }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: hogwarts-living-world
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Unit tests (no keys or network access required)
+        run: python -m unittest discover -s tests -v
+      - name: Validate Windows setup and diagnostics PowerShell syntax
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Get-ChildItem -File -Filter '*.ps1' | ForEach-Object {
+            $tokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$tokens, [ref]$parseErrors) | Out-Null
+            if ($parseErrors.Count -gt 0) { throw ("Invalid PowerShell: " + $_.Name + " - " + ($parseErrors | Out-String)) }
+          }
+
+  windows-build:
+    needs: tests
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: hogwarts-living-world
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install EXE packager
+        run: python -m pip install "pyinstaller>=6.11,<7"
+      - name: Build standalone Windows EXE
+        run: pyinstaller --noconfirm --clean --onefile --name HogwartsLivingWorld start.py
+      - name: Verify packaged EXE (no keys, no cloud, no game)
+        shell: pwsh
+        run: |
+          & .\\dist\\HogwartsLivingWorld.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Packaged version command failed" }
+          & .\\dist\\HogwartsLivingWorld.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Packaged offline self-test failed" }
+      - name: Pack distribution
+        shell: pwsh
+        run: |
+          New-Item -Path package -ItemType Directory | Out-Null
+          Copy-Item dist/HogwartsLivingWorld.exe package/
+          $digest = (Get-FileHash dist/HogwartsLivingWorld.exe -Algorithm SHA256).Hash
+          "HogwartsLivingWorld.exe SHA256 $digest" | Set-Content -Path package/SHA256SUMS.txt -Encoding Ascii
+          Copy-Item run.bat package/
+          Copy-Item run-with-memory.bat package/
+          Copy-Item demo-memory.ps1 package/
+          Copy-Item README.md package/
+          Copy-Item QUICKSTART_RU.md package/
+          Copy-Item ADAPTER_PROTOCOL.md package/
+          Copy-Item demo-full-story.ps1 package/
+          Copy-Item SONORUS_SETUP.md package/
+          Copy-Item demo-story.ps1 package/
+          Copy-Item demo-voice.ps1 package/
+          Copy-Item setup-free.ps1 package/
+          Copy-Item start-bridge.ps1 package/
+          Copy-Item setup-free.bat package/
+          Copy-Item doctor.ps1 package/
+          Copy-Item doctor.bat package/
+          Copy-Item install-probe.ps1 package/
+          Copy-Item uninstall-probe.ps1 package/
+          Copy-Item install-probe.bat package/
+          Copy-Item uninstall-probe.bat package/
+          New-Item -Path package/UE4SS-OPTIONAL -ItemType Directory | Out-Null
+          Copy-Item ue4ss-probe/HLWProbe package/UE4SS-OPTIONAL/ -Recurse
+          Copy-Item ue4ss-probe/README.md package/UE4SS-OPTIONAL/
+          Compress-Archive -Path package/* -DestinationPath HogwartsLivingWorld-0.5.0-win64.zip -Force
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: HogwartsLivingWorld-0.5.0-win64
+          path: hogwarts-living-world/HogwartsLivingWorld-0.5.0-win64.zip
+          if-no-files-found: error
