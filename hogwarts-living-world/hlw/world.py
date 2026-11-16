@@ -73,6 +73,17 @@ class World:
         return {"player_id":player, "npc_id":npc, "affinity":row["affinity"] if row else 0,
                 "trust":row["trust"] if row else 0,"updated":row["updated"] if row else None}
 
+    def story_progress(self, player: str, npc: str) -> dict:
+        safe_id(player)
+        safe_id(npc)
+        with self.lock:
+            rows=self.db.execute(
+                "SELECT milestone FROM milestones WHERE player=? AND npc=? ORDER BY milestone",
+                (player,npc)).fetchall()
+        return {"player_id":player,"npc_id":npc,
+                "completed_milestones":[row["milestone"] for row in rows],
+                "note":"Only local story proposals; no in-game actions executed"}
+
     def recent_events(self, player: str, npc: str, limit: int = 5) -> list[dict]:
         """Only event kinds, not raw chat, to minimize tokens and save privacy."""
         safe_id(player)
@@ -171,6 +182,14 @@ class World:
                     if location:
                         self._enqueue(player,npc,"meeting_proposal",{
                             "location":location,"requires_game_adapter":True},now)
+                from .stories import story_proposals
+                prior_conflict=bool(self.db.execute(
+                    "SELECT 1 FROM events WHERE player=? AND npc=? "
+                    "AND kind IN ('player_refused','meeting_missed','secret_revealed_to_ominis') LIMIT 1",
+                    (player,npc)).fetchone())
+                for milestone, proposal_type, payload in story_proposals(
+                        npc,kind,affinity,trust,prior_conflict):
+                    self._enqueue_once(player,npc,milestone,proposal_type,payload,now)
                 self.db.execute("COMMIT")
             except BaseException:
                 self.db.execute("ROLLBACK")
