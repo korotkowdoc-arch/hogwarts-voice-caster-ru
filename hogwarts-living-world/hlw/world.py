@@ -73,6 +73,24 @@ class World:
         return {"player_id":player, "npc_id":npc, "affinity":row["affinity"] if row else 0,
                 "trust":row["trust"] if row else 0,"updated":row["updated"] if row else None}
 
+    def recent_events(self, player: str, npc: str, limit: int = 5) -> list[dict]:
+        """Only event kinds, not raw chat, to minimize tokens and save privacy."""
+        safe_id(player)
+        safe_id(npc)
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT kind FROM events WHERE player=? AND npc=? AND kind!='probe_ping' "
+                "ORDER BY rowid DESC LIMIT ?",
+                (player,npc,max(1,min(12,int(limit))))).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
+    def context(self, player: str, npc: str) -> str:
+        from .characters import compact_context
+        memory=self.snapshot(player,npc)
+        recent=self.recent_events(player,npc)
+        proposals=[e for e in self.pending(player, limit=100) if e["npc_id"] == npc]
+        return compact_context(npc,memory,recent,proposals)
+
     def apply(self, player: str, npc: str, kind: str, event_id: str) -> dict:
         safe_id(player)
         safe_id(npc)
