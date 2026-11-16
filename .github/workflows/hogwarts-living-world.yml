@@ -52,11 +52,20 @@ jobs:
         run: python -m pip install "pyinstaller>=6.11,<7"
       - name: Build standalone Windows EXE
         run: pyinstaller --noconfirm --clean --onefile --name HogwartsLivingWorld start.py
+      - name: Verify packaged EXE (no keys, no cloud, no game)
+        shell: pwsh
+        run: |
+          & .\\dist\\HogwartsLivingWorld.exe --version
+          if ($LASTEXITCODE -ne 0) { throw "Packaged version command failed" }
+          & .\\dist\\HogwartsLivingWorld.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Packaged offline self-test failed" }
       - name: Pack distribution
         shell: pwsh
         run: |
           New-Item -Path package -ItemType Directory | Out-Null
           Copy-Item dist/HogwartsLivingWorld.exe package/
+          $digest = (Get-FileHash dist/HogwartsLivingWorld.exe -Algorithm SHA256).Hash
+          "HogwartsLivingWorld.exe SHA256 $digest" | Set-Content -Path package/SHA256SUMS.txt -Encoding Ascii
           Copy-Item run.bat package/
           Copy-Item README.md package/
           Copy-Item QUICKSTART_RU.md package/
