@@ -7,7 +7,7 @@
 
 GitHub → Actions → «Hogwarts Living World - tests and Windows build» →
 последняя **успешная** сборка → Artifacts →
-`HogwartsLivingWorld-0.4.1-win64`. Распакуй всё в новую папку вне игры.
+`HogwartsLivingWorld-0.5.0-win64`. Распакуй всё в новую папку вне игры.
 
 ## 2. Настрой бесплатный ИИ один раз
 
