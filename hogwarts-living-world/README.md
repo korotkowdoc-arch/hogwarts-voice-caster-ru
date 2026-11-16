@@ -220,3 +220,35 @@ farewell. The bridge does NOT override Sonorus's game-side actions.
 
 For repeated unwanted farewells, capture the Sonorus Events log around the
 scene (redact any personal data), not only the bridge HTTP status.
+
+
+## v0.5.0 — opt-in Sonorus long-term memory through free Gemini embeddings
+
+Sonorus 1.0.7 saves conversation history already, but its semantic recall
+is disabled without an embeddings endpoint. This release adds a strictly
+optional OpenAI-compatible POST /v1/embeddings that uses the fixed
+gemini-embedding-001 endpoint. No OpenAI billing or local neural models.
+
+- Gemini has an official free tier for text embeddings. Use a project with
+  NO billing enabled; paid projects can be charged regardless of local caps.
+- Gemini API key reused from setup-free.bat; no additional account required.
+- 1536-dimensional normalized vectors; Sonorus's existing embedding field
+  text-embedding-3-small is a LOCAL ALIAS, the actual backend is Gemini.
+- Accepts OpenAI float and base64 encodings, one or up to 16 text strings.
+- SHA256-only SQLite vector cache in local data directory; raw texts and
+  API keys are not written to our embedding cache.
+- Local limit: 240 new Gemini embedding calls/day. Cached repeats are free;
+  exhaustion returns 503 without any paid fallback.
+- Disabled by default; use run-with-memory.bat to opt in.
+- Test with demo-memory.ps1 (one cloud request unless already cached).
+- In Sonorus -> Memory turn Enable Long-Term Memory ON. Keep embedding
+  model text-embedding-3-small. All other active text memory models use
+  hogwarts-living-world-free.
+- Backup Sonorus data before enabling. Do not migrate all existing dialogue
+  history before verifying memory with new conversations. Bulk migrations may
+  exhaust free provider quotas.
+
+This adds an adapter for Sonorus's OWN memory pipeline, not an automatic
+game-hook integration. Correct behavior with Sonorus on the user's real
+PC and API account must be tested. Do not mix embeddings from other
+backends without backing up and rebuilding the corresponding memory index.
