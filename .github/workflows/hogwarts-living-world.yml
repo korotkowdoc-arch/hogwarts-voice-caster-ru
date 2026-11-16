@@ -77,6 +77,10 @@ jobs:
           Copy-Item setup-free.bat package/
           Copy-Item doctor.ps1 package/
           Copy-Item doctor.bat package/
+          Copy-Item install-probe.ps1 package/
+          Copy-Item uninstall-probe.ps1 package/
+          Copy-Item install-probe.bat package/
+          Copy-Item uninstall-probe.bat package/
           New-Item -Path package/UE4SS-OPTIONAL -ItemType Directory | Out-Null
           Copy-Item ue4ss-probe/HLWProbe package/UE4SS-OPTIONAL/ -Recurse
           Copy-Item ue4ss-probe/README.md package/UE4SS-OPTIONAL/
