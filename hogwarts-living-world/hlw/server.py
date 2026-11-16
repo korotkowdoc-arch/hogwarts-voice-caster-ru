@@ -78,6 +78,12 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             self.end_headers()
             self.wfile.write(raw)
 
+        def _local_host(self) -> bool:
+            """Prevent DNS rebinding access from hostile domains to 127.0.0.1."""
+            authority=self.headers.get("Host","").lower().strip()
+            port=self.server.server_port
+            return authority in (f"127.0.0.1:{port}",f"localhost:{port}")
+
         def _authorized(self) -> bool:
             return not bridge_token or self.headers.get("Authorization", "") == "Bearer " + bridge_token
 
@@ -91,6 +97,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             return data
 
         def do_GET(self):
+            if not self._local_host():
+                return self._answer(403,{"error":"invalid_local_host"})
             if not self._authorized():
                 return self._answer(401,{"error":"unauthorized"})
             url = urlparse(self.path)
@@ -130,8 +138,12 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                 return self._answer(400,{"error":str(exc)})
 
         def do_POST(self):
+            if not self._local_host():
+                return self._answer(403,{"error":"invalid_local_host"})
             origin=self.headers.get("Origin")
-            if origin and origin not in ("http://127.0.0.1:8765","http://localhost:8765"):
+            allowed=(f"http://127.0.0.1:{self.server.server_port}",
+                     f"http://localhost:{self.server.server_port}")
+            if origin and origin not in allowed:
                 return self._answer(403,{"error":"cross_site_request_denied"})
             if not self.headers.get("Content-Type","").lower().startswith("application/json"):
                 return self._answer(415,{"error":"application_json_required"})
