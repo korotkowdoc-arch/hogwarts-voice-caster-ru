@@ -109,6 +109,19 @@ class ServerTests(unittest.TestCase):
             urlopen(req,timeout=3)
         self.assertEqual(caught.exception.code,415)
 
+    def test_sonorus_long_context_and_redacted_diagnostics(self):
+        lore="Этот персонаж учится в Хогвартсе. "*1500
+        _,body=self.request("/v1/chat/completions",{"stream":True,"messages":[
+            {"role":"system","content":lore},
+            {"role":"user","content":"Почему ты уходишь?"}]})
+        self.assertIn("data: [DONE]",body)
+        _,history=self.request("/v1/diagnostics/recent")
+        events=json.loads(history)["events"]
+        self.assertTrue(any(e["status"]==200 and e["streaming"] for e in events))
+        self.assertNotIn("Почему ты уходишь?",history)
+        self.assertNotIn("Этот персонаж учится",history)
+        self.assertGreater(events[0]["prompt_chars"],14000)
+
     def test_chat_response(self):
         _,body=self.request("/v1/chat/completions",{"messages":[{"role":"user","content":"Привет"}]})
         self.assertEqual(json.loads(body)["choices"][0]["message"]["content"],"Здравствуй, волшебник!")
