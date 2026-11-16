@@ -38,6 +38,10 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
             world.backup(backup_dir)
     router = router or FreeRouter(DailyBudget(directory / "daily_counts.json",
                                             {"gemini": 120, "groq": 300}))
+    def budget_status():
+        budget=getattr(router,"budget",None)
+        return budget.status() if budget and hasattr(budget,"status") else {"state":"test_router"}
+
     bridge_token = os.environ.get("HLW_BRIDGE_TOKEN", "")
     watch_events = os.environ.get("HLW_WATCH_EVENTS", "0") == "1"
     speech = CloudSpeech(directory) if os.environ.get("HLW_ENABLE_CLOUD_TTS", "0") == "1" else None
@@ -101,7 +105,8 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                                              "game_event_file_inbox":watch_events,
                                              "cloud_tts_preview_enabled":speech is not None,
                                              "last_probe":world.last_probe(),
-                                             "game_integration_verified":False})
+                                             "game_integration_verified":False,
+                                             "local_free_budget":budget_status()})
                 if url.path == "/v1/models":
                     return self._answer(200,{"object":"list","data":[{"id":"hogwarts-living-world-free","object":"model"}]})
                 if url.path == "/v1/diagnostics":
@@ -110,6 +115,7 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
                         "last_probe":world.last_probe(),
                         "watching_event_inbox":watch_events,
                         "key_names_present":router.configured,
+                        "local_free_budget":budget_status(),
                         "data_directory":str(directory),
                         "sonorus_game_integration_verified":False
                     })
