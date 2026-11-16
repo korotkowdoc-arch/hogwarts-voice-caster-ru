@@ -12,7 +12,7 @@ def story_proposals(npc: str, event: str, affinity: int, trust: int,
                     prior_conflict: bool) -> Iterator[tuple[str,str,dict]]:
     base={"requires_game_adapter":True,"game_action_performed":False}
     if npc=="sebastian":
-        if event=="meeting_attended" and trust>=0:
+        if event=="meeting_attended" and trust>=8:
             yield ("undercroft_discussion","scene_proposal",{
                 **base,"scene_id":"sebastian_undercroft_discussion",
                 "subject":"Себастьян хочет обсудить трудный выбор в Подземелье",
