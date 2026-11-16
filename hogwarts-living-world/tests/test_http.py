@@ -119,8 +119,9 @@ class ServerTests(unittest.TestCase):
         self.request("/v1/chat/completions",{"messages":[
             {"role":"system","content":"You are Sebastian [HLW_CONTEXT player=save_1 npc=sebastian]"},
             {"role":"user","content":"Привет"}]})
-        self.assertIn('"trust": -4',self.router.last_messages[0]["content"])
-        self.assertIn('"affinity": -9',self.router.last_messages[0]["content"])
+        self.assertIn("отношение -9/100, доверие -4/100", self.router.last_messages[0]["content"])
+        self.assertIn("Игрок отказался помогать", self.router.last_messages[0]["content"])
+        self.assertIn("Себастьян", self.router.last_messages[0]["content"])
 
     def test_json_object_response_mode(self):
         _,body=self.request("/v1/chat/completions",{"response_format":{"type":"json_object"},
