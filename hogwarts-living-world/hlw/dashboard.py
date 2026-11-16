@@ -37,6 +37,7 @@ code{color:var(--gold)}.mutedtitle{color:var(--muted);font-size:13px}
 <dt>Игровой мод</dt><dd><span class="status warning">не подтверждён</span></dd>
 <dt>Последний UE4SS сигнал</dt><dd id="probe">пока нет</dd>
 <dt>База памяти</dt><dd id="db">...</dd>
+<dt>Долговременная память Sonorus</dt><dd id="long-memory">...</dd>
 </dl><div class="actions"><button class="secondary" id="refresh">Обновить статус</button></div></div>
 <div class="panel"><h2>Проверить облачный диалог</h2>
 <p>Только одна фраза за раз. Отправка расходует бесплатный лимит API; если он исчерпан — будет ошибка, без платного обхода.</p>
@@ -95,6 +96,12 @@ async function refresh(){
   el("probe").textContent=h.last_probe&&h.last_probe.received_at?
       new Date(h.last_probe.received_at*1000).toLocaleString("ru-RU"):"пока нет";
   el("db").textContent=d.storage_integrity==="ok"?"проверена, цела":String(d.storage_integrity);
+  const memory=h.long_term_embeddings||{};
+  const quota=memory.local_budget||{};
+  el("long-memory").textContent=memory.model?
+    ("Gemini 1536 · кэш "+memory.cached_vectors+
+     " · осталось "+(quota.remaining?quota.remaining.gemini_embedding:"?")+" запросов"):
+    "Пока выключена · запуск через run-with-memory.bat";
  }catch(e){el("version").textContent="Ошибка: "+e.message}
 }
 function validId(s){return /^[A-Za-z0-9_.-]{1,64}$/.test(s);}
