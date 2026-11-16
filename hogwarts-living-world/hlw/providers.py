@@ -105,6 +105,7 @@ class FreeRouter:
         self.keys = keys if keys is not None else os.environ
         self.cooldown_until: dict[str, float] = {}
         self.retry_cache = RetryCache(ttl_seconds=25)
+        self.on_event = None  # Optional safe metadata sink, never prompts or keys.
 
     @property
     def configured(self) -> list[str]:
@@ -129,9 +130,15 @@ class FreeRouter:
                            output_format: str) -> Completion:
         for provider, details in PROVIDERS.items():
             key = self.keys.get(details["env"])
-            if not key or self.cooldown_until.get(provider, 0) > time.monotonic():
+            if not key:
+                continue
+            if self.cooldown_until.get(provider, 0) > time.monotonic():
+                if self.on_event:
+                    self.on_event(phase="provider",provider=provider,code="cooldown",status=503)
                 continue
             if not self.budget.consume(provider):
+                if self.on_event:
+                    self.on_event(phase="provider",provider=provider,code="budget_or_counter_locked",status=503)
                 continue
             try:
                 text = self._gemini(messages, key, max_tokens, output_format) if provider == "gemini" else self._groq(messages, key, max_tokens, output_format)
@@ -142,8 +149,15 @@ class FreeRouter:
                                 continue
                         except ValueError:
                             continue
+                    if self.on_event:
+                        self.on_event(phase="provider",provider=provider,code="ok",status=200)
                     return Completion(text.strip(), provider, details["model"])
+                if self.on_event:
+                    self.on_event(phase="provider",provider=provider,code="empty_answer",status=502)
             except ProviderError as exc:
+                if self.on_event:
+                    self.on_event(phase="provider",provider=provider,
+                                  code=exc.code,status=int(exc.code) if exc.code.isdigit() else 502)
                 self.cooldown_until[provider] = time.monotonic() + (300 if exc.code == "429" else 45)
         raise NoFreeProvider("No free response available; game state stays intact.")
 
