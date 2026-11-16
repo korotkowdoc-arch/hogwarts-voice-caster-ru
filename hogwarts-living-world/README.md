@@ -189,3 +189,34 @@ Run tests: python -m unittest discover -s tests -v
 See QUICKSTART_RU.md for the shortest user workflow. The cloud and
 in-game integrations are *unverified without the player's free API keys
 and installed Hogwarts Legacy/Sonorus environment*.
+
+
+## v0.4.1 — Sonorus game dialogue diagnostics
+
+If an NPC says "I seem to be having trouble thinking...", first confirm
+that BOTH SonorusServer and HogwartsLivingWorld.exe are running. The Sonorus
+configuration test does not prove the bridge stayed running during gameplay.
+
+Long game context requests are supported up to a bounded 768,000-byte HTTP
+body; max 128 messages, 100,000 characters per message and 480,000 total.
+The local dashboard shows the latest API request status and provider outcomes.
+
+Visit http://127.0.0.1:8765/v1/diagnostics/recent for metadata only:
+- status 200: the cloud bridge returned a completion to Sonorus
+- status 400: invalid input, potentially oversized/unsupported Sonorus context
+- status 503: no free provider could answer (network, quota or other failure)
+- provider 429: provider rate limit was reached; free failover may be attempted
+
+No prompts, chat content, character/player names, API keys or HTTP request
+headers are stored in the diagnosis log. The local data folder contains only
+a rotating bridge-diagnostics.jsonl with up to 60 entries.
+
+If the model DID respond (200), but Sonorus prematurely says goodbye,
+check Sonorus's Conversation Mode (Home hotkey: Default / Continuous /
+1-to-1) and its dialogue history. Sonorus v1.0.7 has farewell/EndConversation
+logic which can end scenes without a network error. Continuous removes the
+ordinary turn limit; it does not guarantee that an NPC can never choose a
+farewell. The bridge does NOT override Sonorus's game-side actions.
+
+For repeated unwanted farewells, capture the Sonorus Events log around the
+scene (redact any personal data), not only the bridge HTTP status.
