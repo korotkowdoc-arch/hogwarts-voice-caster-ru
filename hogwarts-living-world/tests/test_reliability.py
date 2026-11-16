@@ -51,7 +51,10 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(result["trust"],-16)
         self.assertEqual(self.world.snapshot("slot","ominis")["trust"],8)
         events=self.world.pending("slot",limit=100)
-        self.assertEqual(sum(x["kind"]=="social_reaction_proposal" for x in events),1)
+        reactions=[x for x in events if x["kind"]=="social_reaction_proposal"]
+        # One consequence for Ominis and another for Sebastian.
+        self.assertEqual(len(reactions),2)
+        self.assertEqual({x["npc_id"] for x in reactions},{"ominis","sebastian"})
         self.assertTrue(self.world.apply("slot","sebastian","secret_revealed_to_ominis","reveal_1")["duplicate"])
         self.assertEqual(self.world.snapshot("slot","ominis")["trust"],8)
         with self.assertRaises(ValueError):
