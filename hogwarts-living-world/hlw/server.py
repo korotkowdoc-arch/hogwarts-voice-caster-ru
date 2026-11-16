@@ -220,6 +220,17 @@ def create_app(data: Path | None = None, router: FreeRouter | None = None):
     return Handler
 
 def main():
+    import sys
+    if "--version" in sys.argv[1:]:
+        print("Hogwarts Living World "+__version__)
+        return
+    if "--self-test" in sys.argv[1:]:
+        from .selftest import run_smoke_test
+        ok=run_smoke_test()
+        print("HLW OFFLINE SELF-TEST: "+("PASS" if ok else "FAIL"))
+        if not ok:
+            raise SystemExit(1)
+        return
     # Never expose cloud keys on a public interface.
     addr=("127.0.0.1",8765)
     handler = create_app()
