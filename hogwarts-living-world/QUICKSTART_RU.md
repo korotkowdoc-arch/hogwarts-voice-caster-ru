@@ -1,4 +1,4 @@
-# Hogwarts Living World 0.3 — первый запуск (Windows)
+# Hogwarts Living World 0.4 — первый запуск (Windows)
 
 Это **техническая тестовая сборка**. В Hogwarts Legacy ещё нет работающих
 новых квестов, совиных писем или автоматического управления NPC.
@@ -7,7 +7,7 @@
 
 GitHub → Actions → «Hogwarts Living World - tests and Windows build» →
 последняя **успешная** сборка → Artifacts →
-`HogwartsLivingWorld-0.3.0-win64`. Распакуй всё в новую папку вне игры.
+`HogwartsLivingWorld-0.4.0-win64`. Распакуй всё в новую папку вне игры.
 
 ## 2. Настрой бесплатный ИИ один раз
 
